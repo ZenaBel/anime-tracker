@@ -2,6 +2,8 @@ package tui
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
+
+	"anime-tracker/internal/db"
 )
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -48,7 +50,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.err = nil
 		m.statusMsg = formatScanSummary(msg.result)
-		return m, loadSeriesCmd(m.store)
+		return m, loadSeriesCmd(m.store, m.sortMode)
 
 	case actionDoneMsg:
 		if msg.err != nil {
@@ -56,11 +58,37 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.err = nil
-		cmds := []tea.Cmd{loadSeriesCmd(m.store)}
+		cmds := []tea.Cmd{loadSeriesCmd(m.store, m.sortMode)}
 		if s, ok := m.selectedSeries(); ok {
 			cmds = append(cmds, loadEpisodesCmd(m.store, s.ID))
 		}
 		return m, tea.Batch(cmds...)
+
+	case playerLaunchedMsg:
+		if msg.err != nil {
+			m.err = msg.err
+			return m, nil
+		}
+		m.err = nil
+		var cmds []tea.Cmd
+		if msg.ep.Status == db.StatusNew {
+			cmds = append(cmds, setWatchingCmd(m.store, msg.ep))
+		}
+		if msg.ch != nil {
+			m.statusMsg = "playing " + msg.ep.FileName + " (tracking via mpv IPC)"
+			cmds = append(cmds, waitForPlaybackCmd(msg.ep, msg.ch))
+		} else {
+			m.statusMsg = "playing " + msg.ep.FileName
+		}
+		return m, tea.Batch(cmds...)
+
+	case playbackFinishedMsg:
+		if !msg.result.Watched {
+			m.statusMsg = msg.ep.FileName + ": playback ended without reaching EOF — left as watching"
+			return m, nil
+		}
+		m.statusMsg = msg.ep.FileName + ": marked watched (reached end of file)"
+		return m, markWatchedCmd(m.store, msg.ep)
 	}
 
 	return m, nil
@@ -74,6 +102,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		m.statusMsg = "scanning..."
 		return m, scanCmd(m.store, m.rootDir)
+
+	case "s":
+		m.sortMode = nextSortMode(m.sortMode)
+		m.statusMsg = "sort: " + m.sortMode.String()
+		return m, loadSeriesCmd(m.store, m.sortMode)
 
 	case "up", "k":
 		return m.moveSelection(-1)
@@ -98,7 +131,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if ep, ok := m.selectedEpisode(); ok {
 			m.statusMsg = "opening " + ep.FileName
-			return m, playerOpenCmd(m.store, ep)
+			return m, playerOpenCmd(ep)
 		}
 		return m, nil
 

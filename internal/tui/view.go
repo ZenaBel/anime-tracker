@@ -81,7 +81,7 @@ func (m Model) View() string {
 	body := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 
 	var footer strings.Builder
-	footer.WriteString(helpStyle.Render("↑/↓ or j/k: move  ←/→ or h/l: switch pane  enter: open/focus  space: toggle watched  r: rescan  q: quit"))
+	footer.WriteString(helpStyle.Render("↑/↓ or j/k: move  ←/→ or h/l: switch pane  enter: open/focus  space: toggle watched  r: rescan  s: sort (" + m.sortMode.String() + ")  q: quit"))
 	if m.err != nil {
 		footer.WriteString("\n")
 		footer.WriteString(errStyle.Render("error: " + m.err.Error()))

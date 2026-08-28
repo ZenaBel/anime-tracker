@@ -37,6 +37,46 @@ type SeriesProgress struct {
 	Watched int
 }
 
+// SortMode controls the ordering of ListSeriesWithProgress.
+type SortMode int
+
+const (
+	SortAlphaAsc SortMode = iota
+	SortAlphaDesc
+	SortAdded
+	SortLastWatched
+)
+
+var sortModeNames = map[SortMode]string{
+	SortAlphaAsc:    "az",
+	SortAlphaDesc:   "za",
+	SortAdded:       "added",
+	SortLastWatched: "watched",
+}
+
+func (m SortMode) String() string {
+	if s, ok := sortModeNames[m]; ok {
+		return s
+	}
+	return "az"
+}
+
+// ParseSortMode maps a CLI/config sort name to a SortMode.
+func ParseSortMode(s string) (SortMode, error) {
+	switch s {
+	case "", "az":
+		return SortAlphaAsc, nil
+	case "za":
+		return SortAlphaDesc, nil
+	case "added":
+		return SortAdded, nil
+	case "watched":
+		return SortLastWatched, nil
+	default:
+		return SortAlphaAsc, fmt.Errorf("invalid sort %q (want az, za, added, or watched)", s)
+	}
+}
+
 // Store wraps a *sql.DB with the application's queries.
 type Store struct {
 	db *sql.DB
@@ -166,8 +206,24 @@ func (s *Store) MarkMissingAsWatched(ctx context.Context, seriesID int64, seenPa
 	return count, nil
 }
 
-// ListSeriesWithProgress returns all series with their episode counts.
-func (s *Store) ListSeriesWithProgress(ctx context.Context) ([]SeriesProgress, error) {
+var sortOrderClauses = map[SortMode]string{
+	SortAlphaAsc:    "ORDER BY series.title COLLATE NOCASE ASC",
+	SortAlphaDesc:   "ORDER BY series.title COLLATE NOCASE DESC",
+	// id is a strictly increasing AUTOINCREMENT key, so it's a reliable
+	// insertion-order proxy even when many series are added within the
+	// same created_at timestamp tick during one scan.
+	SortAdded: "ORDER BY series.id DESC",
+	SortLastWatched: "ORDER BY MAX(episodes.finished_at) IS NULL ASC, MAX(episodes.finished_at) DESC",
+}
+
+// ListSeriesWithProgress returns all series with their episode counts,
+// ordered per sort.
+func (s *Store) ListSeriesWithProgress(ctx context.Context, sort SortMode) ([]SeriesProgress, error) {
+	orderClause, ok := sortOrderClauses[sort]
+	if !ok {
+		orderClause = sortOrderClauses[SortAlphaAsc]
+	}
+
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT series.id, series.title, series.dir_path,
 		       COUNT(episodes.id) AS total,
@@ -175,7 +231,7 @@ func (s *Store) ListSeriesWithProgress(ctx context.Context) ([]SeriesProgress, e
 		FROM series
 		LEFT JOIN episodes ON episodes.series_id = series.id
 		GROUP BY series.id
-		ORDER BY series.title`, StatusWatched)
+		`+orderClause, StatusWatched)
 	if err != nil {
 		return nil, fmt.Errorf("querying series progress: %w", err)
 	}

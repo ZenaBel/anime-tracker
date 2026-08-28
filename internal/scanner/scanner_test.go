@@ -52,7 +52,7 @@ func TestScan_NewSeriesAndEpisodes(t *testing.T) {
 		t.Errorf("NewlyWatched = %d, want 0", res.NewlyWatched)
 	}
 
-	all, err := store.ListSeriesWithProgress(ctx)
+	all, err := store.ListSeriesWithProgress(ctx, db.SortAlphaAsc)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +112,7 @@ func TestScan_DeletedFileBecomesWatched(t *testing.T) {
 		t.Fatalf("NewlyWatched = %d, want 1", res.NewlyWatched)
 	}
 
-	all, err := store.ListSeriesWithProgress(ctx)
+	all, err := store.ListSeriesWithProgress(ctx, db.SortAlphaAsc)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +150,7 @@ func TestScan_NonSeriesFolderIsNotTracked(t *testing.T) {
 		t.Errorf("NewSeries = %d, want 1 (torrents folder must not count)", res.NewSeries)
 	}
 
-	all, err := store.ListSeriesWithProgress(ctx)
+	all, err := store.ListSeriesWithProgress(ctx, db.SortAlphaAsc)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +201,7 @@ func TestScan_UnreadableSeriesDirIsSkippedNotMassWatched(t *testing.T) {
 	}
 
 	os.Chmod(seriesDir, 0o755)
-	all, err := store.ListSeriesWithProgress(ctx)
+	all, err := store.ListSeriesWithProgress(ctx, db.SortAlphaAsc)
 	if err != nil {
 		t.Fatal(err)
 	}

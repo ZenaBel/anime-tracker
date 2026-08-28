@@ -25,13 +25,14 @@ cleanly. `make cross` builds linux/windows/darwin (amd64+arm64) binaries into
 ## Usage
 
 ```sh
-anime-tracker                  # launch the TUI (default when no command is given)
-anime-tracker scan             # scan the library, print what changed
-anime-tracker list             # list series with watch progress
-anime-tracker list <series>    # list episodes of one series, fuzzy-matched
-anime-tracker play <query>     # fuzzy-find an episode, open it in the default player
-anime-tracker watch <query>    # manually mark an episode watched
-anime-tracker unwatch <query>  # undo a watched mark
+anime-tracker                            # launch the TUI (default when no command is given)
+anime-tracker scan                       # scan the library, print what changed
+anime-tracker list                       # list series with watch progress
+anime-tracker list --sort <mode>         # az (default), za, added, watched
+anime-tracker list <series>              # list episodes of one series, fuzzy-matched
+anime-tracker play <query>               # fuzzy-find an episode, open it in the player
+anime-tracker watch <query>              # manually mark an episode watched
+anime-tracker unwatch <query>            # undo a watched mark
 ```
 
 Global flags: `--dir` (library root, default: `$ANIME_TRACKER_DIR` or the
@@ -41,9 +42,28 @@ or `~/.config/anime-tracker/anime.db`).
 ### TUI keys
 
 `↑/↓` or `j/k` move within the focused pane · `←/→` or `h/l` switch panes ·
-`enter` opens the selected episode in the default player (series pane:
-focuses the episode list) · `space` toggles an episode between watched/new ·
-`r` rescans the library · `q` quits.
+`enter` opens the selected episode in the player (series pane: focuses the
+episode list) · `space` toggles an episode between watched/new · `r` rescans
+the library · `s` cycles sort order (az → za → added → watched) · `q` quits.
+
+### Choosing a player / MPV playback tracking
+
+By default, `play` and the TUI's `enter` open an episode with the OS's
+default-app opener (`xdg-open`/`open`/`start`) and immediately mark it
+`watching` — actual "watched" detection still comes from the file being
+deleted later (see below).
+
+Set `ANIME_TRACKER_PLAYER=mpv` (or a full path whose base name is `mpv`) to
+launch mpv directly over its JSON IPC socket instead. In that mode, the tool
+tracks mpv's `end-file` event and marks the episode `watched` automatically
+the moment it plays through to the end — no need to delete the file. If mpv
+is quit or stopped early, the episode is left as `watching`. On Linux/macOS
+this uses a unix socket; on Windows it falls back to a plain launch (no
+IPC tracking, since mpv uses named pipes there instead).
+
+Setting `ANIME_TRACKER_PLAYER` to anything else (e.g. `vlc`) just execs that
+binary directly instead of going through the OS opener, with no playback
+tracking.
 
 ## How "watched" is detected
 
@@ -56,11 +76,12 @@ but note a manual "unwatch" on an episode whose file is already gone will be
 flipped back to `watched` on the next scan, since the scanner treats file
 presence as the source of truth.
 
-## Not implemented (documented TODOs)
+## Known limitations
 
-- **MPV IPC playback detection**: instead of relying on file deletion,
-  launch MPV with `--input-ipc-server` and listen for the playback-finished
-  event to mark an episode watched without needing to delete the file.
-- **`ANIME_TRACKER_PLAYER` env var**: to exec a specific player binary
-  directly instead of going through the OS's default-app opener
-  (`xdg-open`/`open`/`start`).
+- MPV IPC playback tracking (see above) only works on Linux/macOS; on
+  Windows `ANIME_TRACKER_PLAYER=mpv` still launches mpv but without
+  automatic watched-detection, since mpv's IPC there uses named pipes
+  rather than unix sockets.
+- Quality-variant duplicate folders (e.g. the same show downloaded as both
+  `... [WEB-DL 1080p]` and `... [WEB-DL 1080p HEVC]`) are tracked as two
+  independent series, since each top-level folder maps to one series.

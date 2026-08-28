@@ -41,18 +41,37 @@ var playCmd = &cobra.Command{
 			return err
 		}
 
-		if err := player.Open(ep.FilePath); err != nil {
+		ch, err := player.Open(ep.FilePath)
+		if err != nil {
 			return fmt.Errorf("opening player: %w", err)
 		}
 
+		started := ep.StartedAt
 		if ep.Status == db.StatusNew {
 			now := time.Now()
-			if err := store.SetStatus(ctx, ep.ID, db.StatusWatching, &now, nil); err != nil {
+			started = &now
+			if err := store.SetStatus(ctx, ep.ID, db.StatusWatching, started, nil); err != nil {
 				return err
 			}
 		}
 
 		fmt.Printf("playing: %s\n", ep.FileName)
+
+		if ch == nil {
+			return nil
+		}
+
+		fmt.Println("waiting for mpv to finish (via IPC) to confirm watched...")
+		result := <-ch
+		if !result.Watched {
+			fmt.Println("playback ended without reaching the end of the file — left as watching")
+			return nil
+		}
+		finished := time.Now()
+		if err := store.SetStatus(ctx, ep.ID, db.StatusWatched, started, &finished); err != nil {
+			return err
+		}
+		fmt.Println("marked watched (reached end of file)")
 		return nil
 	},
 }

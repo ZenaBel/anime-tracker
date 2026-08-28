@@ -5,9 +5,16 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"anime-tracker/internal/db"
 	"anime-tracker/internal/search"
 	"anime-tracker/internal/statusicon"
 )
+
+var sortFlag string
+
+func init() {
+	listCmd.Flags().StringVar(&sortFlag, "sort", "az", "sort order: az, za, added, watched")
+}
 
 var listCmd = &cobra.Command{
 	Use:   "list [series]",
@@ -20,8 +27,13 @@ var listCmd = &cobra.Command{
 		}
 		defer closeStore()
 
+		sortMode, err := db.ParseSortMode(sortFlag)
+		if err != nil {
+			return err
+		}
+
 		ctx := cmd.Context()
-		allSeries, err := store.ListSeriesWithProgress(ctx)
+		allSeries, err := store.ListSeriesWithProgress(ctx, sortMode)
 		if err != nil {
 			return err
 		}
