@@ -18,7 +18,6 @@ const (
 	focusEpisodes
 )
 
-// sortCycle is the order "s" cycles through in the TUI.
 var sortCycle = []db.SortMode{db.SortAlphaAsc, db.SortAlphaDesc, db.SortAdded, db.SortLastWatched}
 
 type Model struct {
@@ -100,8 +99,6 @@ func playerOpenCmd(ep db.Episode) tea.Cmd {
 	}
 }
 
-// waitForPlaybackCmd blocks until the mpv IPC channel reports the result
-// of this playback session.
 func waitForPlaybackCmd(ep db.Episode, ch <-chan player.PlaybackResult) tea.Cmd {
 	return func() tea.Msg {
 		result := <-ch

@@ -10,7 +10,6 @@ import (
 	"anime-tracker/internal/db"
 )
 
-// Result summarizes what a Scan found.
 type Result struct {
 	NewSeries     int
 	NewEpisodes   int

@@ -8,7 +8,6 @@ import (
 	"runtime"
 )
 
-// PlaybackResult reports how a tracked playback session ended.
 type PlaybackResult struct {
 	// Watched is true if mpv reported the file played to its natural end
 	// (EOF), false if it was quit/stopped early or tracking failed.

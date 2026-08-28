@@ -52,7 +52,6 @@ func init() {
 	rootCmd.AddCommand(tuiCmd)
 }
 
-// Execute runs the root command.
 func Execute() error {
 	return rootCmd.ExecuteContext(context.Background())
 }
@@ -85,7 +84,6 @@ func configFromCmd(cmd *cobra.Command) appConfig {
 	return cmd.Context().Value(ctxKey{}).(appConfig)
 }
 
-// openStore opens the store for this invocation and returns a close func.
 func openStore(cmd *cobra.Command) (*db.Store, appConfig, func() error, error) {
 	cfg := configFromCmd(cmd)
 	conn, err := db.Open(cfg.DBPath)

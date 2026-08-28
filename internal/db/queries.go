@@ -14,7 +14,6 @@ const (
 	StatusWatched  = "watched"
 )
 
-// Episode is one tracked .mkv file.
 type Episode struct {
 	ID                 int64
 	SeriesID           int64
@@ -46,7 +45,6 @@ func (e Episode) ProgressPercent() (int, bool) {
 	return pct, true
 }
 
-// SeriesProgress is a series with its aggregated watch progress.
 type SeriesProgress struct {
 	ID      int64
 	Title   string
@@ -55,7 +53,6 @@ type SeriesProgress struct {
 	Watched int
 }
 
-// SortMode controls the ordering of ListSeriesWithProgress.
 type SortMode int
 
 const (
@@ -79,7 +76,6 @@ func (m SortMode) String() string {
 	return "az"
 }
 
-// ParseSortMode maps a CLI/config sort name to a SortMode.
 func ParseSortMode(s string) (SortMode, error) {
 	switch s {
 	case "", "az":
@@ -95,7 +91,6 @@ func ParseSortMode(s string) (SortMode, error) {
 	}
 }
 
-// Store wraps a *sql.DB with the application's queries.
 type Store struct {
 	db *sql.DB
 }
@@ -239,8 +234,6 @@ var sortOrderClauses = map[SortMode]string{
 	SortLastWatched: "ORDER BY MAX(episodes.finished_at) IS NULL ASC, MAX(episodes.finished_at) DESC",
 }
 
-// ListSeriesWithProgress returns all series with their episode counts,
-// ordered per sort.
 func (s *Store) ListSeriesWithProgress(ctx context.Context, sort SortMode) ([]SeriesProgress, error) {
 	orderClause, ok := sortOrderClauses[sort]
 	if !ok {
@@ -295,7 +288,6 @@ func (s *Store) ListEpisodesBySeries(ctx context.Context, seriesID int64) ([]Epi
 	return out, rows.Err()
 }
 
-// ListAllEpisodes returns every tracked episode, across all series.
 func (s *Store) ListAllEpisodes(ctx context.Context) ([]Episode, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, series_id, file_path, file_name, episode_number, size_bytes, mod_time, status, started_at, finished_at, resume_position_seconds, duration_seconds
@@ -317,7 +309,6 @@ func (s *Store) ListAllEpisodes(ctx context.Context) ([]Episode, error) {
 	return out, rows.Err()
 }
 
-// SetStatus manually sets an episode's status and timestamps.
 func (s *Store) SetStatus(ctx context.Context, episodeID int64, status string, startedAt, finishedAt *time.Time) error {
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE episodes SET status = ?, started_at = ?, finished_at = ? WHERE id = ?`,
