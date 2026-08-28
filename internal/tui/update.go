@@ -21,10 +21,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.err = nil
-		m.series = msg.series
-		if m.seriesIdx >= len(m.series) {
-			m.seriesIdx = max(0, len(m.series)-1)
+
+		// Re-sorting or reloading can shuffle positions (e.g. the
+		// "watched" sort mode reacting to a status change), so track
+		// selection by series id rather than trusting the old index.
+		var selectedID int64
+		if s, ok := m.selectedSeries(); ok {
+			selectedID = s.ID
 		}
+		m.series = msg.series
+		m.seriesIdx = indexByID(m.series, selectedID, func(s db.SeriesProgress) int64 { return s.ID }, m.seriesIdx)
+
 		if s, ok := m.selectedSeries(); ok {
 			return m, loadEpisodesCmd(m.store, s.ID)
 		}
@@ -37,10 +44,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.err = nil
-		m.episodes = msg.episodes
-		if m.episodeIdx >= len(m.episodes) {
-			m.episodeIdx = max(0, len(m.episodes)-1)
+
+		var selectedID int64
+		if ep, ok := m.selectedEpisode(); ok {
+			selectedID = ep.ID
 		}
+		m.episodes = msg.episodes
+		m.episodeIdx = indexByID(m.episodes, selectedID, func(e db.Episode) int64 { return e.ID }, m.episodeIdx)
 		return m, nil
 
 	case scanCompleteMsg:
@@ -168,6 +178,19 @@ func (m Model) moveSelection(delta int) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	return m, nil
+}
+
+// indexByID returns the index of the item whose id (via keyFn) matches id,
+// so a selection can survive a reload/re-sort that shuffles positions.
+// Falls back to fallback (clamped into bounds) if id isn't found — e.g.
+// there was no prior selection, or the item is gone.
+func indexByID[T any](items []T, id int64, keyFn func(T) int64, fallback int) int {
+	for i, item := range items {
+		if keyFn(item) == id {
+			return i
+		}
+	}
+	return clamp(fallback, 0, max(0, len(items)-1))
 }
 
 func clamp(v, lo, hi int) int {
