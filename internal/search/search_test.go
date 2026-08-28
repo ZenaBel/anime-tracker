@@ -40,3 +40,82 @@ func TestFindEpisode(t *testing.T) {
 		t.Fatalf("FindEpisode(\"12\") = %+v, want episode 12", got)
 	}
 }
+
+func TestSearch(t *testing.T) {
+	series := []db.SeriesProgress{
+		{ID: 1, Title: "Frieren: Beyond Journey's End"},
+		{ID: 2, Title: "Cowboy Bebop"},
+	}
+	episodes := []db.Episode{
+		{ID: 10, SeriesID: 1, FileName: "[Erai-raws] Frieren - 05 [1080p].mkv"},
+		{ID: 11, SeriesID: 2, FileName: "Cowboy Bebop - 01.mkv"},
+	}
+
+	t.Run("scope all finds both kinds", func(t *testing.T) {
+		results := Search(series, episodes, "frieren", ScopeAll)
+		if len(results) == 0 {
+			t.Fatal("expected at least one match")
+		}
+		var sawSeries, sawEpisode bool
+		for _, r := range results {
+			if r.Kind == KindSeries && r.Series.ID == 1 {
+				sawSeries = true
+			}
+			if r.Kind == KindEpisode && r.Episode.ID == 10 {
+				sawEpisode = true
+			}
+		}
+		if !sawSeries || !sawEpisode {
+			t.Fatalf("results = %+v, want both the Frieren series and its episode", results)
+		}
+	})
+
+	t.Run("scope series excludes episodes", func(t *testing.T) {
+		results := Search(series, episodes, "frieren", ScopeSeries)
+		for _, r := range results {
+			if r.Kind != KindSeries {
+				t.Fatalf("scope=series returned a non-series result: %+v", r)
+			}
+		}
+		if len(results) != 1 {
+			t.Fatalf("results = %+v, want exactly the Frieren series", results)
+		}
+	})
+
+	t.Run("scope episodes excludes series", func(t *testing.T) {
+		results := Search(series, episodes, "05", ScopeEpisodes)
+		if len(results) != 1 || results[0].Kind != KindEpisode || results[0].Episode.ID != 10 {
+			t.Fatalf("results = %+v, want exactly episode 10", results)
+		}
+	})
+
+	t.Run("episode result carries its parent series", func(t *testing.T) {
+		results := Search(series, episodes, "cowboy", ScopeEpisodes)
+		if len(results) != 1 || results[0].Series.ID != 2 {
+			t.Fatalf("results = %+v, want the episode tagged with Cowboy Bebop (series id 2)", results)
+		}
+	})
+
+	t.Run("empty query returns everything in scope", func(t *testing.T) {
+		results := Search(series, episodes, "", ScopeAll)
+		if len(results) != len(series)+len(episodes) {
+			t.Fatalf("got %d results, want %d", len(results), len(series)+len(episodes))
+		}
+	})
+}
+
+func TestNextScope(t *testing.T) {
+	cases := []struct {
+		in   Scope
+		want Scope
+	}{
+		{ScopeAll, ScopeSeries},
+		{ScopeSeries, ScopeEpisodes},
+		{ScopeEpisodes, ScopeAll},
+	}
+	for _, tc := range cases {
+		if got := NextScope(tc.in); got != tc.want {
+			t.Errorf("NextScope(%v) = %v, want %v", tc.in, got, tc.want)
+		}
+	}
+}

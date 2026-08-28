@@ -46,7 +46,18 @@ or `~/.config/anime-tracker/anime.db`).
 `enter` opens the selected episode in the player (series pane: focuses the
 episode list) · `space` toggles an episode between watched/new · `p` plays
 the rest of the selected series as one playlist · `r` rescans the library ·
-`s` cycles sort order (az → za → added → watched) · `q` quits.
+`s` cycles sort order (az → za → added → watched) · `/` opens search ·
+`q` quits.
+
+### Search
+
+`/` opens a fuzzy search that, by default, matches both series titles and
+episode file names at once, ranked together by match quality. `Tab` cycles
+its scope (all → series only → episodes only → all) if you want to narrow
+it; `↑/↓` move the selection, `enter` jumps straight to that series (or
+that exact episode, within its series) in the normal panes, and `esc`
+cancels back to wherever you were. Episode search loads fresh (all tracked
+episodes, not just the currently selected series) each time you open it.
 
 ### Choosing a player / MPV playback tracking
 

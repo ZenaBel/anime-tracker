@@ -8,24 +8,27 @@ import (
 
 	"anime-tracker/internal/db"
 	"anime-tracker/internal/scanner"
+	"anime-tracker/internal/search"
 	"anime-tracker/internal/statusicon"
 )
 
 const (
-	leftPaneWidth  = 46
-	rightPaneWidth = 60
-	barWidth       = 10
-	epBarWidth     = 6
+	leftPaneWidth   = 46
+	rightPaneWidth  = 60
+	searchPaneWidth = leftPaneWidth + rightPaneWidth
+	barWidth        = 10
+	epBarWidth      = 6
 )
 
 var (
-	selectedStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212"))
-	focusedTitle   = lipgloss.NewStyle().Bold(true).Underline(true)
-	dimTitle       = lipgloss.NewStyle().Faint(true)
-	errStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
-	helpStyle      = lipgloss.NewStyle().Faint(true)
-	leftPaneStyle  = lipgloss.NewStyle().Width(leftPaneWidth).Padding(0, 1)
-	rightPaneStyle = lipgloss.NewStyle().Width(rightPaneWidth).Padding(0, 1)
+	selectedStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212"))
+	focusedTitle    = lipgloss.NewStyle().Bold(true).Underline(true)
+	dimTitle        = lipgloss.NewStyle().Faint(true)
+	errStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
+	helpStyle       = lipgloss.NewStyle().Faint(true)
+	leftPaneStyle   = lipgloss.NewStyle().Width(leftPaneWidth).Padding(0, 1)
+	rightPaneStyle  = lipgloss.NewStyle().Width(rightPaneWidth).Padding(0, 1)
+	searchPaneStyle = lipgloss.NewStyle().Width(searchPaneWidth).Padding(0, 1)
 )
 
 // truncate shortens s to at most n runes, appending an ellipsis if cut.
@@ -78,6 +81,10 @@ func visibleWindow(total, selected, maxVisible int) (start, end int) {
 }
 
 func (m Model) View() string {
+	if m.searchActive {
+		return m.viewSearch()
+	}
+
 	left := m.viewSeriesPane()
 	right := m.viewEpisodesPane()
 	body := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
@@ -185,6 +192,58 @@ func (m Model) viewEpisodesPane() string {
 	}
 
 	return rightPaneStyle.Render(b.String())
+}
+
+func (m Model) viewSearch() string {
+	var b strings.Builder
+	b.WriteString(focusedTitle.Render("Search"))
+	b.WriteString(dimTitle.Render(fmt.Sprintf(" (scope: %s — tab to change)", m.searchScope.String())))
+	b.WriteString("\n\n")
+	b.WriteString("> " + m.searchQuery + "▌")
+	b.WriteString("\n\n")
+
+	if m.searchLoading {
+		b.WriteString(dimTitle.Render("loading episodes for search..."))
+		b.WriteString("\n")
+	}
+
+	if len(m.searchResults) == 0 {
+		b.WriteString(dimTitle.Render("(no matches)"))
+		b.WriteString("\n")
+	}
+
+	maxVisible := m.visibleRows()
+	start, end := visibleWindow(len(m.searchResults), m.searchIdx, maxVisible)
+	if start > 0 {
+		b.WriteString(dimTitle.Render(fmt.Sprintf("  ↑ %d more", start)))
+		b.WriteString("\n")
+	}
+	for i := start; i < end; i++ {
+		line := formatSearchResult(m.searchResults[i])
+		if i == m.searchIdx {
+			line = selectedStyle.Render("> " + line)
+		} else {
+			line = "  " + line
+		}
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+	if end < len(m.searchResults) {
+		b.WriteString(dimTitle.Render(fmt.Sprintf("  ↓ %d more", len(m.searchResults)-end)))
+		b.WriteString("\n")
+	}
+
+	b.WriteString("\n")
+	b.WriteString(helpStyle.Render("type to filter  tab: scope  ↑/↓: move  enter: jump  esc: cancel"))
+
+	return searchPaneStyle.Render(b.String())
+}
+
+func formatSearchResult(r search.Result) string {
+	if r.Kind == search.KindSeries {
+		return fmt.Sprintf("[series]  %-40s %3d/%-3d", truncate(r.Series.Title, 40), r.Series.Watched, r.Series.Total)
+	}
+	return fmt.Sprintf("[episode] %s %-25s %s", statusicon.Icon(r.Episode.Status), truncate(r.Series.Title, 25), truncate(r.Episode.FileName, 55))
 }
 
 func progressBar(watched, total int) string {

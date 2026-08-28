@@ -6,6 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"anime-tracker/internal/db"
+	"anime-tracker/internal/search"
 )
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -15,6 +16,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		if m.searchActive {
+			return m.handleSearchKey(msg)
+		}
 		return m.handleKey(msg)
 
 	case seriesLoadedMsg:
@@ -47,13 +51,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.err = nil
 
-		// If the previously selected episode is still in the new list
-		// (an in-place refresh of the same series), keep the cursor on
-		// it exactly. Otherwise — landing on this series fresh, e.g.
-		// from series-pane navigation or on startup — default to the
-		// first not-yet-watched episode instead of always episode 1.
+		// A search jump wins over everything else. Otherwise: if the
+		// previously selected episode is still in the new list (an
+		// in-place refresh of the same series), keep the cursor on it
+		// exactly. Otherwise — landing on this series fresh, e.g. from
+		// series-pane navigation or on startup — default to the first
+		// not-yet-watched episode instead of always episode 1.
 		var selectedID int64
-		if ep, ok := m.selectedEpisode(); ok {
+		if m.pendingEpisodeID > 0 {
+			selectedID = m.pendingEpisodeID
+			m.pendingEpisodeID = 0
+		} else if ep, ok := m.selectedEpisode(); ok {
 			selectedID = ep.ID
 		}
 		m.episodes = msg.episodes
@@ -135,6 +143,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusMsg = "playlist finished"
 		}
 		return m, nil
+
+	case searchDataLoadedMsg:
+		m.searchLoading = false
+		if msg.err != nil {
+			m.err = msg.err
+			return m, nil
+		}
+		m.err = nil
+		m.searchAllEpisodes = msg.episodes
+		return m.withSearchResults(), nil
 	}
 
 	return m, nil
@@ -153,6 +171,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.sortMode = nextSortMode(m.sortMode)
 		m.statusMsg = "sort: " + m.sortMode.String()
 		return m, loadSeriesCmd(m.store, m.sortMode)
+
+	case "/":
+		m.searchActive = true
+		m.searchQuery = ""
+		m.searchScope = search.ScopeAll
+		m.searchIdx = 0
+		m.searchLoading = true
+		return m.withSearchResults(), loadSearchDataCmd(m.store)
 
 	case "p":
 		if len(m.episodes) == 0 {
@@ -196,6 +222,58 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
+	}
+
+	return m, nil
+}
+
+// handleSearchKey handles input while the search overlay is active: text
+// typed builds the query, dedicated keys navigate/act on results, and
+// everything re-filters in place (all in-memory, no async round-trip once
+// searchAllEpisodes is loaded).
+func (m Model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEsc:
+		m.searchActive = false
+		return m, nil
+
+	case tea.KeyEnter:
+		if r, ok := m.selectedSearchResult(); ok {
+			return m.jumpToSearchResult(r)
+		}
+		m.searchActive = false
+		return m, nil
+
+	case tea.KeyTab:
+		m.searchScope = search.NextScope(m.searchScope)
+		m.searchIdx = 0
+		return m.withSearchResults(), nil
+
+	case tea.KeyUp:
+		m.searchIdx = clamp(m.searchIdx-1, 0, max(0, len(m.searchResults)-1))
+		return m, nil
+
+	case tea.KeyDown:
+		m.searchIdx = clamp(m.searchIdx+1, 0, max(0, len(m.searchResults)-1))
+		return m, nil
+
+	case tea.KeyBackspace:
+		if r := []rune(m.searchQuery); len(r) > 0 {
+			m.searchQuery = string(r[:len(r)-1])
+			m.searchIdx = 0
+			return m.withSearchResults(), nil
+		}
+		return m, nil
+
+	case tea.KeyRunes:
+		m.searchQuery += string(msg.Runes)
+		m.searchIdx = 0
+		return m.withSearchResults(), nil
+
+	case tea.KeySpace:
+		m.searchQuery += " "
+		m.searchIdx = 0
+		return m.withSearchResults(), nil
 	}
 
 	return m, nil

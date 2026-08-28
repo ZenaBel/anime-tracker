@@ -64,3 +64,11 @@ type playlistItemFinishedMsg struct {
 type playlistDoneMsg struct {
 	received int
 }
+
+// searchDataLoadedMsg carries every tracked episode, fetched fresh on
+// opening search so it can be fuzzy-matched globally (not just within
+// whatever series happens to be selected).
+type searchDataLoadedMsg struct {
+	episodes []db.Episode
+	err      error
+}

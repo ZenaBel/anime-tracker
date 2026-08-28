@@ -9,6 +9,7 @@ import (
 	"anime-tracker/internal/db"
 	"anime-tracker/internal/player"
 	"anime-tracker/internal/scanner"
+	"anime-tracker/internal/search"
 )
 
 type focusPane int
@@ -35,6 +36,19 @@ type Model struct {
 	width, height int
 	statusMsg     string
 	err           error
+
+	searchActive      bool
+	searchLoading     bool
+	searchQuery       string
+	searchScope       search.Scope
+	searchAllEpisodes []db.Episode
+	searchResults     []search.Result
+	searchIdx         int
+
+	// pendingEpisodeID, when >0, is the episode a search jump wants
+	// selected once its series' episode list finishes loading; consumed
+	// (and cleared) by the next episodesLoadedMsg.
+	pendingEpisodeID int64
 }
 
 func NewModel(store *db.Store, rootDir string) Model {
@@ -59,6 +73,41 @@ func (m Model) selectedEpisode() (db.Episode, bool) {
 	return m.episodes[m.episodeIdx], true
 }
 
+func (m Model) selectedSearchResult() (search.Result, bool) {
+	if m.searchIdx < 0 || m.searchIdx >= len(m.searchResults) {
+		return search.Result{}, false
+	}
+	return m.searchResults[m.searchIdx], true
+}
+
+// withSearchResults re-runs the fuzzy search against the current query and
+// scope, clamping the selection into the new result count.
+func (m Model) withSearchResults() Model {
+	m.searchResults = search.Search(m.series, m.searchAllEpisodes, m.searchQuery, m.searchScope)
+	if m.searchIdx >= len(m.searchResults) {
+		m.searchIdx = max(0, len(m.searchResults)-1)
+	}
+	return m
+}
+
+// jumpToSearchResult closes search and selects r in the normal panes: a
+// series result focuses the series pane; an episode result focuses the
+// episode pane and selects that exact episode once its series' episode
+// list (re)loads.
+func (m Model) jumpToSearchResult(r search.Result) (Model, tea.Cmd) {
+	m.searchActive = false
+	m.seriesIdx = indexByID(m.series, r.Series.ID, func(s db.SeriesProgress) int64 { return s.ID }, m.seriesIdx)
+
+	if r.Kind == search.KindSeries {
+		m.focus = focusSeries
+		m.episodeIdx = 0
+		return m, loadEpisodesCmd(m.store, r.Series.ID)
+	}
+	m.focus = focusEpisodes
+	m.pendingEpisodeID = r.Episode.ID
+	return m, loadEpisodesCmd(m.store, r.Series.ID)
+}
+
 func nextSortMode(current db.SortMode) db.SortMode {
 	for i, s := range sortCycle {
 		if s == current {
@@ -79,6 +128,13 @@ func loadEpisodesCmd(store *db.Store, seriesID int64) tea.Cmd {
 	return func() tea.Msg {
 		eps, err := store.ListEpisodesBySeries(context.Background(), seriesID)
 		return episodesLoadedMsg{episodes: eps, err: err}
+	}
+}
+
+func loadSearchDataCmd(store *db.Store) tea.Cmd {
+	return func() tea.Msg {
+		eps, err := store.ListAllEpisodes(context.Background())
+		return searchDataLoadedMsg{episodes: eps, err: err}
 	}
 }
 
