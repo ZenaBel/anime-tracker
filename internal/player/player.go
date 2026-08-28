@@ -39,6 +39,33 @@ func Open(filePath string) (<-chan PlaybackResult, error) {
 	return nil, cmd.Start()
 }
 
+// PlaylistResult reports how one file within a playlist launched via
+// OpenPlaylist finished.
+type PlaylistResult struct {
+	FileIndex    int
+	Watched      bool
+	PositionSecs float64
+	DurationSecs float64
+}
+
+// OpenPlaylist launches mpv with filePaths queued as a sequential
+// playlist. The returned channel receives one PlaylistResult per file, in
+// order, as each finishes; it closes once mpv exits, whether that's after
+// the last file or from an early quit (any files not yet reached simply
+// never get a result). Requires $ANIME_TRACKER_PLAYER=mpv, since playlist
+// tracking depends on the same JSON IPC mechanism as single-episode
+// tracking.
+func OpenPlaylist(filePaths []string) (<-chan PlaylistResult, error) {
+	if len(filePaths) == 0 {
+		return nil, fmt.Errorf("no files to play")
+	}
+	playerBin := os.Getenv("ANIME_TRACKER_PLAYER")
+	if !isMPV(playerBin) {
+		return nil, fmt.Errorf("playlist playback requires ANIME_TRACKER_PLAYER=mpv")
+	}
+	return openMPVPlaylistWithIPC(playerBin, filePaths)
+}
+
 func isMPV(playerBin string) bool {
 	return playerBin != "" && filepath.Base(playerBin) == "mpv"
 }

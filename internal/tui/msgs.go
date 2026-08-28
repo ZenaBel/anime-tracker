@@ -39,3 +39,24 @@ type playbackFinishedMsg struct {
 	ep     db.Episode
 	result player.PlaybackResult
 }
+
+// playlistLaunchedMsg reports that an mpv playlist has been started. ch is
+// nil if launching failed.
+type playlistLaunchedMsg struct {
+	episodes []db.Episode // in playlist order; result.FileIndex indexes into this
+	ch       <-chan player.PlaylistResult
+	err      error
+}
+
+// playlistItemFinishedMsg reports one file's result within a still-running
+// playlist; ch is carried forward so the handler can keep listening for
+// the next one.
+type playlistItemFinishedMsg struct {
+	episodes []db.Episode
+	ch       <-chan player.PlaylistResult
+	result   player.PlaylistResult
+}
+
+// playlistDoneMsg reports that the playlist's result channel closed —
+// mpv exited, whether by reaching the end or an early quit.
+type playlistDoneMsg struct{}

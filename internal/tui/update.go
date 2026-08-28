@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"fmt"
+
 	tea "github.com/charmbracelet/bubbletea"
 
 	"anime-tracker/internal/db"
@@ -55,7 +57,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			selectedID = ep.ID
 		}
 		m.episodes = msg.episodes
-		m.episodeIdx = indexByID(m.episodes, selectedID, func(e db.Episode) int64 { return e.ID }, firstUnwatchedIndex(m.episodes))
+		m.episodeIdx = indexByID(m.episodes, selectedID, func(e db.Episode) int64 { return e.ID }, db.FirstUnwatchedIndex(m.episodes))
 		return m, nil
 
 	case scanCompleteMsg:
@@ -104,6 +106,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.statusMsg = msg.ep.FileName + ": marked watched (reached end of file)"
 		return m, markWatchedCmd(m.store, msg.ep)
+
+	case playlistLaunchedMsg:
+		if msg.err != nil {
+			m.err = msg.err
+			return m, nil
+		}
+		m.err = nil
+		m.statusMsg = fmt.Sprintf("playlist: %d episode(s) queued (tracking via mpv IPC)", len(msg.episodes))
+		return m, waitForPlaylistItemCmd(msg.episodes, msg.ch)
+
+	case playlistItemFinishedMsg:
+		ep := msg.episodes[msg.result.FileIndex]
+		if msg.result.Watched {
+			m.statusMsg = ep.FileName + ": watched"
+		} else {
+			m.statusMsg = ep.FileName + ": stopped partway through"
+		}
+		return m, tea.Batch(
+			playlistItemResultCmd(m.store, ep, msg.result),
+			waitForPlaylistItemCmd(msg.episodes, msg.ch),
+		)
+
+	case playlistDoneMsg:
+		m.statusMsg = "playlist finished"
+		return m, nil
 	}
 
 	return m, nil
@@ -122,6 +149,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.sortMode = nextSortMode(m.sortMode)
 		m.statusMsg = "sort: " + m.sortMode.String()
 		return m, loadSeriesCmd(m.store, m.sortMode)
+
+	case "p":
+		if len(m.episodes) == 0 {
+			return m, nil
+		}
+		queue := append([]db.Episode(nil), m.episodes[db.FirstUnwatchedIndex(m.episodes):]...)
+		m.statusMsg = "launching playlist..."
+		return m, playlistOpenCmd(queue)
 
 	case "up", "k":
 		return m.moveSelection(-1)
@@ -183,18 +218,6 @@ func (m Model) moveSelection(delta int) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	return m, nil
-}
-
-// firstUnwatchedIndex returns the index of the first episode that isn't
-// fully watched (i.e. the next one to watch), or 0 if there is none or the
-// list is empty.
-func firstUnwatchedIndex(episodes []db.Episode) int {
-	for i, ep := range episodes {
-		if ep.Status != db.StatusWatched {
-			return i
-		}
-	}
-	return 0
 }
 
 // indexByID returns the index of the item whose id (via keyFn) matches id,

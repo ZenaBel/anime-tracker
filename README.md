@@ -31,6 +31,7 @@ anime-tracker list                       # list series with watch progress
 anime-tracker list --sort <mode>         # az (default), za, added, watched
 anime-tracker list <series>              # list episodes of one series, fuzzy-matched
 anime-tracker play <query>               # fuzzy-find an episode, open it in the player
+anime-tracker playlist <series-query>    # play all remaining episodes of a series as one mpv playlist
 anime-tracker watch <query>              # manually mark an episode watched
 anime-tracker unwatch <query>            # undo a watched mark
 ```
@@ -43,8 +44,9 @@ or `~/.config/anime-tracker/anime.db`).
 
 `↑/↓` or `j/k` move within the focused pane · `←/→` or `h/l` switch panes ·
 `enter` opens the selected episode in the player (series pane: focuses the
-episode list) · `space` toggles an episode between watched/new · `r` rescans
-the library · `s` cycles sort order (az → za → added → watched) · `q` quits.
+episode list) · `space` toggles an episode between watched/new · `p` plays
+the rest of the selected series as one playlist · `r` rescans the library ·
+`s` cycles sort order (az → za → added → watched) · `q` quits.
 
 ### Choosing a player / MPV playback tracking
 
@@ -78,6 +80,20 @@ saved, and a `watching` episode shows a mini progress bar next to it — e.g.
 `◐ [##----] 33% Title - 05.mkv` — in both the TUI's episode pane and
 `list <series>`. It updates each time you stop partway through an episode;
 finishing one to EOF clears it (the `✓` icon already says "done").
+
+### Playing a series as a playlist
+
+`anime-tracker playlist <series-query>` (or `p` in the TUI) launches mpv
+once with every remaining episode of a series queued as a single playlist,
+starting from the first not-yet-watched episode — so you don't have to
+relaunch the player for each one. Each file's outcome is tracked
+individually over the same mpv IPC mechanism as single-episode playback: an
+episode mpv plays to EOF gets marked `watched` and mpv auto-advances to the
+next one; if you quit partway through a file, that one keeps its partial
+progress (shown as a `watching` progress bar) and playback stops there —
+episodes further down the queue are left untouched. Requires
+`ANIME_TRACKER_PLAYER=mpv`, since it's built on the same IPC socket as the
+rest of the mpv integration.
 
 ## How "watched" is detected
 

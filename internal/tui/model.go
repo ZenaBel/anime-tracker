@@ -154,3 +154,49 @@ func toggleStatusCmd(store *db.Store, ep db.Episode) tea.Cmd {
 		return actionDoneMsg{err: markWatched(ctx, store, ep)}
 	}
 }
+
+// playlistOpenCmd launches episodes as an mpv playlist and reports back
+// immediately with the tracking channel; it does not block on the
+// playlist finishing.
+func playlistOpenCmd(episodes []db.Episode) tea.Cmd {
+	return func() tea.Msg {
+		paths := make([]string, len(episodes))
+		for i, ep := range episodes {
+			paths[i] = ep.FilePath
+		}
+		ch, err := player.OpenPlaylist(paths)
+		return playlistLaunchedMsg{episodes: episodes, ch: ch, err: err}
+	}
+}
+
+func waitForPlaylistItemCmd(episodes []db.Episode, ch <-chan player.PlaylistResult) tea.Cmd {
+	return func() tea.Msg {
+		result, ok := <-ch
+		if !ok {
+			return playlistDoneMsg{}
+		}
+		return playlistItemFinishedMsg{episodes: episodes, ch: ch, result: result}
+	}
+}
+
+// playlistItemResultCmd applies one playlist file's outcome to its
+// episode: watched episodes are marked done; a still-in-progress one gets
+// its status bumped to watching (if it was new) and its position saved.
+func playlistItemResultCmd(store *db.Store, ep db.Episode, result player.PlaylistResult) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+		if result.Watched {
+			return actionDoneMsg{err: markWatched(ctx, store, ep)}
+		}
+		if ep.Status == db.StatusNew {
+			now := time.Now()
+			if err := store.SetStatus(ctx, ep.ID, db.StatusWatching, &now, nil); err != nil {
+				return actionDoneMsg{err: err}
+			}
+		}
+		if result.DurationSecs <= 0 {
+			return actionDoneMsg{}
+		}
+		return actionDoneMsg{err: store.SetPlaybackProgress(ctx, ep.ID, result.PositionSecs, result.DurationSecs)}
+	}
+}

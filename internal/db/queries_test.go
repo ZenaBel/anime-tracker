@@ -198,3 +198,28 @@ func TestSetPlaybackProgress(t *testing.T) {
 		t.Fatalf("progress not cleared: %+v", eps[0])
 	}
 }
+
+func TestFirstUnwatchedIndex(t *testing.T) {
+	cases := []struct {
+		name     string
+		statuses []string
+		want     int
+	}{
+		{"empty", nil, 0},
+		{"all watched", []string{StatusWatched, StatusWatched}, 0},
+		{"none watched", []string{StatusNew, StatusNew}, 0},
+		{"some watched, next is new", []string{StatusWatched, StatusWatched, StatusNew, StatusNew}, 2},
+		{"some watched, next is watching", []string{StatusWatched, StatusWatching, StatusNew}, 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var eps []Episode
+			for _, s := range tc.statuses {
+				eps = append(eps, Episode{Status: s})
+			}
+			if got := FirstUnwatchedIndex(eps); got != tc.want {
+				t.Errorf("FirstUnwatchedIndex(%v) = %d, want %d", tc.statuses, got, tc.want)
+			}
+		})
+	}
+}

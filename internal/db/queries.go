@@ -45,6 +45,18 @@ func (e Episode) ProgressPercent() (int, bool) {
 	return pct, true
 }
 
+// FirstUnwatchedIndex returns the index of the first episode in eps that
+// isn't fully watched (i.e. the next one to watch), or 0 if there is none
+// or eps is empty.
+func FirstUnwatchedIndex(eps []Episode) int {
+	for i, ep := range eps {
+		if ep.Status != StatusWatched {
+			return i
+		}
+	}
+	return 0
+}
+
 type SeriesProgress struct {
 	ID      int64
 	Title   string

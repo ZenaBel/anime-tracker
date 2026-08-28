@@ -47,6 +47,7 @@ func init() {
 	rootCmd.AddCommand(scanCmd)
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(playCmd)
+	rootCmd.AddCommand(playlistCmd)
 	rootCmd.AddCommand(watchCmd)
 	rootCmd.AddCommand(unwatchCmd)
 	rootCmd.AddCommand(tuiCmd)
