@@ -1,0 +1,7 @@
+/anime-tracker
+/anime-tracker.exe
+/anime-tracker-*
+/dist/
+*.db
+*.db-journal
+.idea/

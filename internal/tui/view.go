@@ -1,0 +1,195 @@
+package tui
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+
+	"anime-tracker/internal/scanner"
+	"anime-tracker/internal/statusicon"
+)
+
+const (
+	leftPaneWidth  = 46
+	rightPaneWidth = 60
+	barWidth       = 10
+)
+
+var (
+	selectedStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212"))
+	focusedTitle   = lipgloss.NewStyle().Bold(true).Underline(true)
+	dimTitle       = lipgloss.NewStyle().Faint(true)
+	errStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
+	helpStyle      = lipgloss.NewStyle().Faint(true)
+	leftPaneStyle  = lipgloss.NewStyle().Width(leftPaneWidth).Padding(0, 1)
+	rightPaneStyle = lipgloss.NewStyle().Width(rightPaneWidth).Padding(0, 1)
+)
+
+// truncate shortens s to at most n runes, appending an ellipsis if cut.
+func truncate(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	if n <= 1 {
+		return string(r[:n])
+	}
+	return string(r[:n-1]) + "…"
+}
+
+// nonListRows is how many lines the layout spends on things that aren't
+// list rows: pane title + blank line (2), the blank separator and up to
+// two footer lines (help + status/error) below the panes (3), and up to
+// two scroll indicator lines ("↑ N more" / "↓ N more") within a pane (2).
+const nonListRows = 7
+
+// visibleRows returns how many list rows fit in the current terminal
+// height. Falls back to a sane default before the first WindowSizeMsg.
+func (m Model) visibleRows() int {
+	if m.height <= 0 {
+		return 20
+	}
+	n := m.height - nonListRows
+	if n < 3 {
+		n = 3
+	}
+	return n
+}
+
+// visibleWindow returns the [start, end) slice bounds that keep selected
+// within a window of at most maxVisible items out of total.
+func visibleWindow(total, selected, maxVisible int) (start, end int) {
+	if total <= maxVisible {
+		return 0, total
+	}
+	start = selected - maxVisible/2
+	if start < 0 {
+		start = 0
+	}
+	end = start + maxVisible
+	if end > total {
+		end = total
+		start = end - maxVisible
+	}
+	return start, end
+}
+
+func (m Model) View() string {
+	left := m.viewSeriesPane()
+	right := m.viewEpisodesPane()
+	body := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
+
+	var footer strings.Builder
+	footer.WriteString(helpStyle.Render("↑/↓ or j/k: move  ←/→ or h/l: switch pane  enter: open/focus  space: toggle watched  r: rescan  q: quit"))
+	if m.err != nil {
+		footer.WriteString("\n")
+		footer.WriteString(errStyle.Render("error: " + m.err.Error()))
+	} else if m.statusMsg != "" {
+		footer.WriteString("\n")
+		footer.WriteString(m.statusMsg)
+	}
+
+	return body + "\n\n" + footer.String()
+}
+
+func (m Model) viewSeriesPane() string {
+	title := "Series"
+	if m.focus == focusSeries {
+		title = focusedTitle.Render(title)
+	} else {
+		title = dimTitle.Render(title)
+	}
+
+	var b strings.Builder
+	b.WriteString(title)
+	b.WriteString("\n\n")
+
+	if len(m.series) == 0 {
+		b.WriteString(dimTitle.Render("(no series found — press r to scan)"))
+	}
+
+	maxVisible := m.visibleRows()
+	start, end := visibleWindow(len(m.series), m.seriesIdx, maxVisible)
+	if start > 0 {
+		b.WriteString(dimTitle.Render(fmt.Sprintf("  ↑ %d more", start)))
+		b.WriteString("\n")
+	}
+	for i := start; i < end; i++ {
+		s := m.series[i]
+		line := fmt.Sprintf("%s %-18s %3d/%-3d", progressBar(s.Watched, s.Total), truncate(s.Title, 18), s.Watched, s.Total)
+		if i == m.seriesIdx {
+			line = selectedStyle.Render("> " + line)
+		} else {
+			line = "  " + line
+		}
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+	if end < len(m.series) {
+		b.WriteString(dimTitle.Render(fmt.Sprintf("  ↓ %d more", len(m.series)-end)))
+		b.WriteString("\n")
+	}
+
+	return leftPaneStyle.Render(b.String())
+}
+
+func (m Model) viewEpisodesPane() string {
+	title := "Episodes"
+	if m.focus == focusEpisodes {
+		title = focusedTitle.Render(title)
+	} else {
+		title = dimTitle.Render(title)
+	}
+
+	var b strings.Builder
+	b.WriteString(title)
+	b.WriteString("\n\n")
+
+	if len(m.episodes) == 0 {
+		b.WriteString(dimTitle.Render("(no episodes)"))
+	}
+
+	maxVisible := m.visibleRows()
+	start, end := visibleWindow(len(m.episodes), m.episodeIdx, maxVisible)
+	if start > 0 {
+		b.WriteString(dimTitle.Render(fmt.Sprintf("  ↑ %d more", start)))
+		b.WriteString("\n")
+	}
+	for i := start; i < end; i++ {
+		ep := m.episodes[i]
+		line := fmt.Sprintf("%s %s", statusicon.Icon(ep.Status), truncate(ep.FileName, rightPaneWidth-6))
+		if i == m.episodeIdx {
+			line = selectedStyle.Render("> " + line)
+		} else {
+			line = "  " + line
+		}
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+	if end < len(m.episodes) {
+		b.WriteString(dimTitle.Render(fmt.Sprintf("  ↓ %d more", len(m.episodes)-end)))
+		b.WriteString("\n")
+	}
+
+	return rightPaneStyle.Render(b.String())
+}
+
+func progressBar(watched, total int) string {
+	filled := 0
+	if total > 0 {
+		filled = watched * barWidth / total
+	}
+	if filled > barWidth {
+		filled = barWidth
+	}
+	return "[" + strings.Repeat("#", filled) + strings.Repeat("-", barWidth-filled) + "]"
+}
+
+func formatScanSummary(res scanner.Result) string {
+	s := fmt.Sprintf("scanned: %d new series, %d new episodes, %d newly watched", res.NewSeries, res.NewEpisodes, res.NewlyWatched)
+	if len(res.SkippedSeries) > 0 {
+		s += fmt.Sprintf(" (%d skipped, unreadable)", len(res.SkippedSeries))
+	}
+	return s
+}

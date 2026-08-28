@@ -1,0 +1,51 @@
+package cmd
+
+import (
+	"fmt"
+
+	"github.com/spf13/cobra"
+
+	"anime-tracker/internal/search"
+	"anime-tracker/internal/statusicon"
+)
+
+var listCmd = &cobra.Command{
+	Use:   "list [series]",
+	Short: "List series progress, or episodes of one series",
+	Args:  cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		store, _, closeStore, err := openStore(cmd)
+		if err != nil {
+			return err
+		}
+		defer closeStore()
+
+		ctx := cmd.Context()
+		allSeries, err := store.ListSeriesWithProgress(ctx)
+		if err != nil {
+			return err
+		}
+
+		if len(args) == 0 {
+			for _, s := range allSeries {
+				fmt.Printf("%-40s %3d/%-3d\n", s.Title, s.Watched, s.Total)
+			}
+			return nil
+		}
+
+		series, ok := search.FindSeries(allSeries, args[0])
+		if !ok {
+			return fmt.Errorf("no series matching %q", args[0])
+		}
+
+		episodes, err := store.ListEpisodesBySeries(ctx, series.ID)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("%s (%d/%d)\n", series.Title, series.Watched, series.Total)
+		for _, ep := range episodes {
+			fmt.Printf("  %s %s\n", statusicon.Icon(ep.Status), ep.FileName)
+		}
+		return nil
+	},
+}

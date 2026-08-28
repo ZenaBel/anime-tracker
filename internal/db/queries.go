@@ -1,0 +1,281 @@
+package db
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"time"
+)
+
+const (
+	StatusNew      = "new"
+	StatusWatching = "watching"
+	StatusWatched  = "watched"
+)
+
+// Episode is one tracked .mkv file.
+type Episode struct {
+	ID            int64
+	SeriesID      int64
+	FilePath      string
+	FileName      string
+	EpisodeNumber *int
+	SizeBytes     int64
+	ModTime       time.Time
+	Status        string
+	StartedAt     *time.Time
+	FinishedAt    *time.Time
+}
+
+// SeriesProgress is a series with its aggregated watch progress.
+type SeriesProgress struct {
+	ID      int64
+	Title   string
+	DirPath string
+	Total   int
+	Watched int
+}
+
+// Store wraps a *sql.DB with the application's queries.
+type Store struct {
+	db *sql.DB
+}
+
+func NewStore(conn *sql.DB) *Store {
+	return &Store{db: conn}
+}
+
+// SeriesIDByDirPath looks up a series by its directory path without
+// creating one if it doesn't exist.
+func (s *Store) SeriesIDByDirPath(ctx context.Context, dirPath string) (int64, bool, error) {
+	var id int64
+	err := s.db.QueryRowContext(ctx, `SELECT id FROM series WHERE dir_path = ?`, dirPath).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, fmt.Errorf("querying series: %w", err)
+	}
+	return id, true, nil
+}
+
+// UpsertSeries ensures a series row exists for dirPath, updating its title
+// if it changed. Returns the row id and whether it was newly created.
+func (s *Store) UpsertSeries(ctx context.Context, title, dirPath string) (int64, bool, error) {
+	var id int64
+	var existingTitle string
+	err := s.db.QueryRowContext(ctx, `SELECT id, title FROM series WHERE dir_path = ?`, dirPath).Scan(&id, &existingTitle)
+	if errors.Is(err, sql.ErrNoRows) {
+		res, err := s.db.ExecContext(ctx, `INSERT INTO series (title, dir_path) VALUES (?, ?)`, title, dirPath)
+		if err != nil {
+			return 0, false, fmt.Errorf("inserting series: %w", err)
+		}
+		id, err := res.LastInsertId()
+		if err != nil {
+			return 0, false, fmt.Errorf("getting new series id: %w", err)
+		}
+		return id, true, nil
+	}
+	if err != nil {
+		return 0, false, fmt.Errorf("querying series: %w", err)
+	}
+
+	if existingTitle != title {
+		if _, err := s.db.ExecContext(ctx, `UPDATE series SET title = ? WHERE id = ?`, title, id); err != nil {
+			return 0, false, fmt.Errorf("updating series title: %w", err)
+		}
+	}
+	return id, false, nil
+}
+
+// UpsertEpisodeSeen records that filePath was observed on disk. On an
+// existing row it only refreshes metadata (size, mod time, episode number)
+// and never touches status/timestamps. Returns whether the row was new.
+func (s *Store) UpsertEpisodeSeen(ctx context.Context, seriesID int64, filePath, fileName string, epNum *int, size int64, modTime time.Time) (bool, error) {
+	var id int64
+	err := s.db.QueryRowContext(ctx, `SELECT id FROM episodes WHERE file_path = ?`, filePath).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		_, err := s.db.ExecContext(ctx, `
+			INSERT INTO episodes (series_id, file_path, file_name, episode_number, size_bytes, mod_time, status)
+			VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			seriesID, filePath, fileName, epNum, size, modTime, StatusNew)
+		if err != nil {
+			return false, fmt.Errorf("inserting episode: %w", err)
+		}
+		return true, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("querying episode: %w", err)
+	}
+
+	_, err = s.db.ExecContext(ctx, `
+		UPDATE episodes SET size_bytes = ?, mod_time = ?, episode_number = ?, file_name = ?
+		WHERE id = ?`,
+		size, modTime, epNum, fileName, id)
+	if err != nil {
+		return false, fmt.Errorf("updating episode: %w", err)
+	}
+	return false, nil
+}
+
+// MarkMissingAsWatched marks episodes of seriesID as watched if their
+// file_path is not present in seenPaths and they aren't already watched.
+func (s *Store) MarkMissingAsWatched(ctx context.Context, seriesID int64, seenPaths []string) (int64, error) {
+	seen := make(map[string]struct{}, len(seenPaths))
+	for _, p := range seenPaths {
+		seen[p] = struct{}{}
+	}
+
+	rows, err := s.db.QueryContext(ctx, `SELECT id, file_path FROM episodes WHERE series_id = ? AND status != ?`, seriesID, StatusWatched)
+	if err != nil {
+		return 0, fmt.Errorf("querying episodes: %w", err)
+	}
+
+	var missingIDs []int64
+	for rows.Next() {
+		var id int64
+		var filePath string
+		if err := rows.Scan(&id, &filePath); err != nil {
+			rows.Close()
+			return 0, fmt.Errorf("scanning episode: %w", err)
+		}
+		if _, ok := seen[filePath]; !ok {
+			missingIDs = append(missingIDs, id)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("iterating episodes: %w", err)
+	}
+	rows.Close()
+
+	var count int64
+	for _, id := range missingIDs {
+		_, err := s.db.ExecContext(ctx, `
+			UPDATE episodes
+			SET status = ?,
+			    finished_at = COALESCE(finished_at, CURRENT_TIMESTAMP),
+			    started_at = COALESCE(started_at, CURRENT_TIMESTAMP)
+			WHERE id = ?`,
+			StatusWatched, id)
+		if err != nil {
+			return count, fmt.Errorf("marking episode watched: %w", err)
+		}
+		count++
+	}
+	return count, nil
+}
+
+// ListSeriesWithProgress returns all series with their episode counts.
+func (s *Store) ListSeriesWithProgress(ctx context.Context) ([]SeriesProgress, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT series.id, series.title, series.dir_path,
+		       COUNT(episodes.id) AS total,
+		       COALESCE(SUM(CASE WHEN episodes.status = ? THEN 1 ELSE 0 END), 0) AS watched
+		FROM series
+		LEFT JOIN episodes ON episodes.series_id = series.id
+		GROUP BY series.id
+		ORDER BY series.title`, StatusWatched)
+	if err != nil {
+		return nil, fmt.Errorf("querying series progress: %w", err)
+	}
+	defer rows.Close()
+
+	var out []SeriesProgress
+	for rows.Next() {
+		var sp SeriesProgress
+		if err := rows.Scan(&sp.ID, &sp.Title, &sp.DirPath, &sp.Total, &sp.Watched); err != nil {
+			return nil, fmt.Errorf("scanning series progress: %w", err)
+		}
+		out = append(out, sp)
+	}
+	return out, rows.Err()
+}
+
+// ListEpisodesBySeries returns episodes for a series, ordered by episode
+// number (unparsed numbers last) then filename.
+func (s *Store) ListEpisodesBySeries(ctx context.Context, seriesID int64) ([]Episode, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, series_id, file_path, file_name, episode_number, size_bytes, mod_time, status, started_at, finished_at
+		FROM episodes
+		WHERE series_id = ?
+		ORDER BY episode_number IS NULL, episode_number, file_name`, seriesID)
+	if err != nil {
+		return nil, fmt.Errorf("querying episodes: %w", err)
+	}
+	defer rows.Close()
+
+	var out []Episode
+	for rows.Next() {
+		ep, err := scanEpisode(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, ep)
+	}
+	return out, rows.Err()
+}
+
+// ListAllEpisodes returns every tracked episode, across all series.
+func (s *Store) ListAllEpisodes(ctx context.Context) ([]Episode, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, series_id, file_path, file_name, episode_number, size_bytes, mod_time, status, started_at, finished_at
+		FROM episodes
+		ORDER BY episode_number IS NULL, episode_number, file_name`)
+	if err != nil {
+		return nil, fmt.Errorf("querying episodes: %w", err)
+	}
+	defer rows.Close()
+
+	var out []Episode
+	for rows.Next() {
+		ep, err := scanEpisode(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, ep)
+	}
+	return out, rows.Err()
+}
+
+// SetStatus manually sets an episode's status and timestamps.
+func (s *Store) SetStatus(ctx context.Context, episodeID int64, status string, startedAt, finishedAt *time.Time) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE episodes SET status = ?, started_at = ?, finished_at = ? WHERE id = ?`,
+		status, startedAt, finishedAt, episodeID)
+	if err != nil {
+		return fmt.Errorf("setting episode status: %w", err)
+	}
+	return nil
+}
+
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanEpisode(row rowScanner) (Episode, error) {
+	var ep Episode
+	var epNum sql.NullInt64
+	var modTime sql.NullTime
+	var startedAt, finishedAt sql.NullTime
+	err := row.Scan(&ep.ID, &ep.SeriesID, &ep.FilePath, &ep.FileName, &epNum, &ep.SizeBytes, &modTime, &ep.Status, &startedAt, &finishedAt)
+	if err != nil {
+		return Episode{}, fmt.Errorf("scanning episode: %w", err)
+	}
+	if epNum.Valid {
+		n := int(epNum.Int64)
+		ep.EpisodeNumber = &n
+	}
+	if modTime.Valid {
+		ep.ModTime = modTime.Time
+	}
+	if startedAt.Valid {
+		t := startedAt.Time
+		ep.StartedAt = &t
+	}
+	if finishedAt.Valid {
+		t := finishedAt.Time
+		ep.FinishedAt = &t
+	}
+	return ep, nil
+}
