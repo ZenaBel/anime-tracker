@@ -54,7 +54,6 @@ func mpvSocketPath() (string, error) {
 
 func trackMPVPlayback(cmd *exec.Cmd, sockPath string, resultCh chan<- PlaybackResult) {
 	defer close(resultCh)
-	defer os.Remove(sockPath)
 
 	watched := false
 	if conn, err := dialMPVSocket(sockPath, mpvSocketDialTimeout); err == nil {
@@ -62,8 +61,15 @@ func trackMPVPlayback(cmd *exec.Cmd, sockPath string, resultCh chan<- PlaybackRe
 		conn.Close()
 	}
 
-	cmd.Wait()
+	// Report the result as soon as the outcome is known from the IPC
+	// event, rather than waiting for the mpv process to fully exit
+	// (which can lag behind end-file for window-close/cleanup reasons).
+	// Reap the process and clean up the socket file in the background.
 	resultCh <- PlaybackResult{Watched: watched}
+	go func() {
+		cmd.Wait()
+		os.Remove(sockPath)
+	}()
 }
 
 func dialMPVSocket(sockPath string, timeout time.Duration) (net.Conn, error) {
