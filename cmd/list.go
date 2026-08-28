@@ -13,7 +13,7 @@ import (
 var sortFlag string
 
 func init() {
-	listCmd.Flags().StringVar(&sortFlag, "sort", "az", "sort order: az, za, added, watched")
+	listCmd.Flags().StringVar(&sortFlag, "sort", "az", "sort order: az, za, added (newest episode first), watched (recently watched first)")
 }
 
 var listCmd = &cobra.Command{

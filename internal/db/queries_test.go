@@ -34,7 +34,8 @@ func TestListSeriesWithProgress_Sorting(t *testing.T) {
 	// then Charlie. "added" order relies on the AUTOINCREMENT id (not
 	// created_at, whose second-level ticks can tie during a fast scan),
 	// so this insertion order is itself the fixture for that case.
-	if _, _, err := store.UpsertSeries(ctx, "Bravo", "/lib/Bravo"); err != nil {
+	idB, _, err := store.UpsertSeries(ctx, "Bravo", "/lib/Bravo")
+	if err != nil {
 		t.Fatal(err)
 	}
 	idA, _, err := store.UpsertSeries(ctx, "Alpha", "/lib/Alpha")
@@ -48,8 +49,7 @@ func TestListSeriesWithProgress_Sorting(t *testing.T) {
 
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
-	// Alpha and Charlie each get one watched episode; Bravo stays
-	// untouched (never watched).
+	// Alpha and Charlie each get one watched episode.
 	if _, err := store.UpsertEpisodeSeen(ctx, idA, "/lib/Alpha/01.mkv", "01.mkv", nil, 0, time.Now()); err != nil {
 		t.Fatal(err)
 	}
@@ -68,6 +68,15 @@ func TestListSeriesWithProgress_Sorting(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Bravo is the *oldest-tracked* series (lowest series.id) but gets its
+	// only episode added last and never watched. This is exactly the real
+	// scenario "added" needs to get right: a long-tracked series that just
+	// got a new episode should sort to the top of "added", and an
+	// unwatched series should sort to the bottom of "watched".
+	if _, err := store.UpsertEpisodeSeen(ctx, idB, "/lib/Bravo/01.mkv", "01.mkv", nil, 0, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+
 	cases := []struct {
 		name string
 		sort SortMode
@@ -75,7 +84,7 @@ func TestListSeriesWithProgress_Sorting(t *testing.T) {
 	}{
 		{"alpha asc", SortAlphaAsc, []string{"Alpha", "Bravo", "Charlie"}},
 		{"alpha desc", SortAlphaDesc, []string{"Charlie", "Bravo", "Alpha"}},
-		{"added (newest first)", SortAdded, []string{"Charlie", "Alpha", "Bravo"}},
+		{"added: newest episode first, not oldest-tracked series first", SortAdded, []string{"Bravo", "Charlie", "Alpha"}},
 		{"last watched (most recent first, never-watched last)", SortLastWatched, []string{"Charlie", "Alpha", "Bravo"}},
 	}
 

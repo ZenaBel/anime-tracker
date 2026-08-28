@@ -227,10 +227,15 @@ func (s *Store) MarkMissingAsWatched(ctx context.Context, seriesID int64, seenPa
 var sortOrderClauses = map[SortMode]string{
 	SortAlphaAsc:  "ORDER BY series.title COLLATE NOCASE ASC",
 	SortAlphaDesc: "ORDER BY series.title COLLATE NOCASE DESC",
-	// id is a strictly increasing AUTOINCREMENT key, so it's a reliable
-	// insertion-order proxy even when many series are added within the
-	// same created_at timestamp tick during one scan.
-	SortAdded:       "ORDER BY series.id DESC",
+	// "Added" means "most recently got new content", not "when the series
+	// was first tracked" — otherwise a series that just got new episodes
+	// scanned in wouldn't move, since its own series.id never changes.
+	// episodes.id is a strictly increasing AUTOINCREMENT key, so the max
+	// per series is a reliable "most recently added episode" proxy, and
+	// it doubles as the original tie-breaker for series bulk-added within
+	// the same created_at tick during one scan (their first episode's id
+	// still orders correctly).
+	SortAdded:       "ORDER BY MAX(episodes.id) IS NULL ASC, MAX(episodes.id) DESC",
 	SortLastWatched: "ORDER BY MAX(episodes.finished_at) IS NULL ASC, MAX(episodes.finished_at) DESC",
 }
 
