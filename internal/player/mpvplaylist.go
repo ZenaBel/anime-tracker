@@ -57,24 +57,32 @@ func trackMPVPlaylist(cmd *exec.Cmd, sockPath string, total int, resultCh chan<-
 
 // readPlaylistEvents subscribes to mpv's time-pos and duration properties
 // and reads its JSON IPC event stream, emitting one PlaylistResult per
-// "end-file" event in the order they arrive (which matches playlist
-// order, since mpv plays queued files sequentially). Stops once every
-// file has reported a result, or on the first non-eof end-file (an early
-// quit/stop skips whatever files hadn't started yet).
+// "end-file" event as it arrives. A file's own end-file reason is either
+// "eof" (played through) or something else — "stop" in particular fires
+// just as much for the user manually skipping to the next/previous track
+// in mpv's own playlist controls as for an actual full quit, so a non-eof
+// reason on its own does NOT mean tracking should stop: only an explicit
+// "quit" reason (the whole player exiting) or having accounted for every
+// file does. File identity comes from mpv's own playlist_entry_id (1-based,
+// stable even if the user jumps around the playlist out of order) with a
+// sequential counter as a fallback for mpv versions that omit it.
 func readPlaylistEvents(conn net.Conn, total int, resultCh chan<- PlaylistResult) {
 	enc := json.NewEncoder(conn)
 	enc.Encode(map[string]any{"command": []any{"observe_property", 1, "time-pos"}})
 	enc.Encode(map[string]any{"command": []any{"observe_property", 2, "duration"}})
 
 	var pos, dur float64
-	fileIdx := 0
+	seen := make(map[int]bool)
+	reported := 0
+	fallbackIdx := 0
 	sc := bufio.NewScanner(conn)
 	for sc.Scan() {
 		var msg struct {
-			Event  string          `json:"event"`
-			Reason string          `json:"reason"`
-			Name   string          `json:"name"`
-			Data   json.RawMessage `json:"data"`
+			Event           string          `json:"event"`
+			Reason          string          `json:"reason"`
+			Name            string          `json:"name"`
+			Data            json.RawMessage `json:"data"`
+			PlaylistEntryID int             `json:"playlist_entry_id"`
 		}
 		if err := json.Unmarshal(sc.Bytes(), &msg); err != nil {
 			continue
@@ -93,16 +101,24 @@ func readPlaylistEvents(conn net.Conn, total int, resultCh chan<- PlaylistResult
 			continue
 		}
 
-		if msg.Event != "end-file" || fileIdx >= total {
+		if msg.Event != "end-file" {
 			continue
 		}
 
-		watched := msg.Reason == "eof"
-		resultCh <- PlaylistResult{FileIndex: fileIdx, Watched: watched, PositionSecs: pos, DurationSecs: dur}
-		fileIdx++
-		pos, dur = 0, 0 // next file starts its own position tracking
+		fileIdx := fallbackIdx
+		if msg.PlaylistEntryID >= 1 {
+			fileIdx = msg.PlaylistEntryID - 1
+		}
 
-		if !watched || fileIdx >= total {
+		if fileIdx >= 0 && fileIdx < total && !seen[fileIdx] {
+			resultCh <- PlaylistResult{FileIndex: fileIdx, Watched: msg.Reason == "eof", PositionSecs: pos, DurationSecs: dur}
+			seen[fileIdx] = true
+			reported++
+			fallbackIdx = fileIdx + 1
+		}
+		pos, dur = 0, 0 // whatever plays next starts its own position tracking
+
+		if msg.Reason == "quit" || reported >= total {
 			return
 		}
 	}
