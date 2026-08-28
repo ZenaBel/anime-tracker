@@ -11,7 +11,10 @@ import (
 	"time"
 )
 
-const mpvSocketDialTimeout = 5 * time.Second
+// mpvSocketDialTimeout has to cover a real, non-headless mpv's startup —
+// GPU/display/audio init on a cold start can take several seconds, well
+// past what a minimal --vo=null test build would suggest.
+const mpvSocketDialTimeout = 20 * time.Second
 
 // openMPVWithIPC launches mpv with a JSON IPC socket and tracks playback
 // completion over it. On Windows (where mpv's IPC uses named pipes rather

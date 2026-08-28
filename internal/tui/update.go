@@ -114,7 +114,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.err = nil
 		m.statusMsg = fmt.Sprintf("playlist: %d episode(s) queued (tracking via mpv IPC)", len(msg.episodes))
-		return m, waitForPlaylistItemCmd(msg.episodes, msg.ch)
+		return m, waitForPlaylistItemCmd(msg.episodes, msg.ch, 0)
 
 	case playlistItemFinishedMsg:
 		ep := msg.episodes[msg.result.FileIndex]
@@ -125,11 +125,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(
 			playlistItemResultCmd(m.store, ep, msg.result),
-			waitForPlaylistItemCmd(msg.episodes, msg.ch),
+			waitForPlaylistItemCmd(msg.episodes, msg.ch, msg.received),
 		)
 
 	case playlistDoneMsg:
-		m.statusMsg = "playlist finished"
+		if msg.received == 0 {
+			m.statusMsg = "mpv's IPC socket never became available — nothing was tracked (mpv is likely still playing normally)"
+		} else {
+			m.statusMsg = "playlist finished"
+		}
 		return m, nil
 	}
 

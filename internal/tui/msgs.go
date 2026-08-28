@@ -50,13 +50,17 @@ type playlistLaunchedMsg struct {
 
 // playlistItemFinishedMsg reports one file's result within a still-running
 // playlist; ch is carried forward so the handler can keep listening for
-// the next one.
+// the next one. received counts results seen so far, including this one.
 type playlistItemFinishedMsg struct {
 	episodes []db.Episode
 	ch       <-chan player.PlaylistResult
 	result   player.PlaylistResult
+	received int
 }
 
 // playlistDoneMsg reports that the playlist's result channel closed —
-// mpv exited, whether by reaching the end or an early quit.
-type playlistDoneMsg struct{}
+// mpv exited, whether by reaching the end or an early quit. received==0
+// means mpv's IPC socket never connected, so nothing was ever tracked.
+type playlistDoneMsg struct {
+	received int
+}

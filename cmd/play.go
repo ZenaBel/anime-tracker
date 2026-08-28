@@ -86,7 +86,11 @@ var playCmd = &cobra.Command{
 			return err
 		}
 		if !result.Watched {
-			fmt.Println("playback ended without reaching the end of the file — left as watching")
+			if result.DurationSecs == 0 {
+				fmt.Println("mpv's IPC socket never became available, so nothing was tracked — mpv is likely still playing normally, just without automatic status updates")
+			} else {
+				fmt.Println("playback ended without reaching the end of the file — left as watching")
+			}
 			return nil
 		}
 		fmt.Println("marked watched (reached end of file)")

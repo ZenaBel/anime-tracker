@@ -52,7 +52,9 @@ var playlistCmd = &cobra.Command{
 			return err
 		}
 
+		received := 0
 		for result := range ch {
+			received++
 			ep := queue[result.FileIndex]
 
 			started := ep.StartedAt
@@ -74,6 +76,10 @@ var playlistCmd = &cobra.Command{
 			}
 		}
 
+		if received == 0 {
+			fmt.Println("mpv's IPC socket never became available, so nothing was tracked — mpv is likely still playing normally, just without automatic status updates")
+			return nil
+		}
 		fmt.Println("playlist finished")
 		return nil
 	},

@@ -169,13 +169,13 @@ func playlistOpenCmd(episodes []db.Episode) tea.Cmd {
 	}
 }
 
-func waitForPlaylistItemCmd(episodes []db.Episode, ch <-chan player.PlaylistResult) tea.Cmd {
+func waitForPlaylistItemCmd(episodes []db.Episode, ch <-chan player.PlaylistResult, received int) tea.Cmd {
 	return func() tea.Msg {
 		result, ok := <-ch
 		if !ok {
-			return playlistDoneMsg{}
+			return playlistDoneMsg{received: received}
 		}
-		return playlistItemFinishedMsg{episodes: episodes, ch: ch, result: result}
+		return playlistItemFinishedMsg{episodes: episodes, ch: ch, result: result, received: received + 1}
 	}
 }
 
