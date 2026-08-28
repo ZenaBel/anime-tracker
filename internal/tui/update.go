@@ -45,12 +45,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.err = nil
 
+		// If the previously selected episode is still in the new list
+		// (an in-place refresh of the same series), keep the cursor on
+		// it exactly. Otherwise — landing on this series fresh, e.g.
+		// from series-pane navigation or on startup — default to the
+		// first not-yet-watched episode instead of always episode 1.
 		var selectedID int64
 		if ep, ok := m.selectedEpisode(); ok {
 			selectedID = ep.ID
 		}
 		m.episodes = msg.episodes
-		m.episodeIdx = indexByID(m.episodes, selectedID, func(e db.Episode) int64 { return e.ID }, m.episodeIdx)
+		m.episodeIdx = indexByID(m.episodes, selectedID, func(e db.Episode) int64 { return e.ID }, firstUnwatchedIndex(m.episodes))
 		return m, nil
 
 	case scanCompleteMsg:
@@ -178,6 +183,18 @@ func (m Model) moveSelection(delta int) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	return m, nil
+}
+
+// firstUnwatchedIndex returns the index of the first episode that isn't
+// fully watched (i.e. the next one to watch), or 0 if there is none or the
+// list is empty.
+func firstUnwatchedIndex(episodes []db.Episode) int {
+	for i, ep := range episodes {
+		if ep.Status != db.StatusWatched {
+			return i
+		}
+	}
+	return 0
 }
 
 // indexByID returns the index of the item whose id (via keyFn) matches id,
