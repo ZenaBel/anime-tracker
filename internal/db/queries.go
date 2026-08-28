@@ -16,16 +16,34 @@ const (
 
 // Episode is one tracked .mkv file.
 type Episode struct {
-	ID            int64
-	SeriesID      int64
-	FilePath      string
-	FileName      string
-	EpisodeNumber *int
-	SizeBytes     int64
-	ModTime       time.Time
-	Status        string
-	StartedAt     *time.Time
-	FinishedAt    *time.Time
+	ID                 int64
+	SeriesID           int64
+	FilePath           string
+	FileName           string
+	EpisodeNumber      *int
+	SizeBytes          int64
+	ModTime            time.Time
+	Status             string
+	StartedAt          *time.Time
+	FinishedAt         *time.Time
+	ResumePositionSecs *float64
+	DurationSecs       *float64
+}
+
+// ProgressPercent returns how far into the episode playback last got, 0-100,
+// or false if no position/duration has ever been recorded.
+func (e Episode) ProgressPercent() (int, bool) {
+	if e.ResumePositionSecs == nil || e.DurationSecs == nil || *e.DurationSecs <= 0 {
+		return 0, false
+	}
+	pct := int(*e.ResumePositionSecs / *e.DurationSecs * 100)
+	if pct < 0 {
+		pct = 0
+	}
+	if pct > 100 {
+		pct = 100
+	}
+	return pct, true
 }
 
 // SeriesProgress is a series with its aggregated watch progress.
@@ -207,12 +225,12 @@ func (s *Store) MarkMissingAsWatched(ctx context.Context, seriesID int64, seenPa
 }
 
 var sortOrderClauses = map[SortMode]string{
-	SortAlphaAsc:    "ORDER BY series.title COLLATE NOCASE ASC",
-	SortAlphaDesc:   "ORDER BY series.title COLLATE NOCASE DESC",
+	SortAlphaAsc:  "ORDER BY series.title COLLATE NOCASE ASC",
+	SortAlphaDesc: "ORDER BY series.title COLLATE NOCASE DESC",
 	// id is a strictly increasing AUTOINCREMENT key, so it's a reliable
 	// insertion-order proxy even when many series are added within the
 	// same created_at timestamp tick during one scan.
-	SortAdded: "ORDER BY series.id DESC",
+	SortAdded:       "ORDER BY series.id DESC",
 	SortLastWatched: "ORDER BY MAX(episodes.finished_at) IS NULL ASC, MAX(episodes.finished_at) DESC",
 }
 
@@ -252,7 +270,7 @@ func (s *Store) ListSeriesWithProgress(ctx context.Context, sort SortMode) ([]Se
 // number (unparsed numbers last) then filename.
 func (s *Store) ListEpisodesBySeries(ctx context.Context, seriesID int64) ([]Episode, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, series_id, file_path, file_name, episode_number, size_bytes, mod_time, status, started_at, finished_at
+		SELECT id, series_id, file_path, file_name, episode_number, size_bytes, mod_time, status, started_at, finished_at, resume_position_seconds, duration_seconds
 		FROM episodes
 		WHERE series_id = ?
 		ORDER BY episode_number IS NULL, episode_number, file_name`, seriesID)
@@ -275,7 +293,7 @@ func (s *Store) ListEpisodesBySeries(ctx context.Context, seriesID int64) ([]Epi
 // ListAllEpisodes returns every tracked episode, across all series.
 func (s *Store) ListAllEpisodes(ctx context.Context) ([]Episode, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, series_id, file_path, file_name, episode_number, size_bytes, mod_time, status, started_at, finished_at
+		SELECT id, series_id, file_path, file_name, episode_number, size_bytes, mod_time, status, started_at, finished_at, resume_position_seconds, duration_seconds
 		FROM episodes
 		ORDER BY episode_number IS NULL, episode_number, file_name`)
 	if err != nil {
@@ -305,6 +323,23 @@ func (s *Store) SetStatus(ctx context.Context, episodeID int64, status string, s
 	return nil
 }
 
+// SetPlaybackProgress records the last known playback position, for
+// rendering a per-episode progress bar. Pass durationSecs <= 0 to clear it
+// (e.g. once an episode is fully watched).
+func (s *Store) SetPlaybackProgress(ctx context.Context, episodeID int64, positionSecs, durationSecs float64) error {
+	var posArg, durArg any
+	if durationSecs > 0 {
+		posArg, durArg = positionSecs, durationSecs
+	}
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE episodes SET resume_position_seconds = ?, duration_seconds = ? WHERE id = ?`,
+		posArg, durArg, episodeID)
+	if err != nil {
+		return fmt.Errorf("setting playback progress: %w", err)
+	}
+	return nil
+}
+
 type rowScanner interface {
 	Scan(dest ...any) error
 }
@@ -314,7 +349,8 @@ func scanEpisode(row rowScanner) (Episode, error) {
 	var epNum sql.NullInt64
 	var modTime sql.NullTime
 	var startedAt, finishedAt sql.NullTime
-	err := row.Scan(&ep.ID, &ep.SeriesID, &ep.FilePath, &ep.FileName, &epNum, &ep.SizeBytes, &modTime, &ep.Status, &startedAt, &finishedAt)
+	var resumePos, duration sql.NullFloat64
+	err := row.Scan(&ep.ID, &ep.SeriesID, &ep.FilePath, &ep.FileName, &epNum, &ep.SizeBytes, &modTime, &ep.Status, &startedAt, &finishedAt, &resumePos, &duration)
 	if err != nil {
 		return Episode{}, fmt.Errorf("scanning episode: %w", err)
 	}
@@ -332,6 +368,14 @@ func scanEpisode(row rowScanner) (Episode, error) {
 	if finishedAt.Valid {
 		t := finishedAt.Time
 		ep.FinishedAt = &t
+	}
+	if resumePos.Valid {
+		v := resumePos.Float64
+		ep.ResumePositionSecs = &v
+	}
+	if duration.Valid {
+		v := duration.Float64
+		ep.DurationSecs = &v
 	}
 	return ep, nil
 }

@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
+	"anime-tracker/internal/db"
 	"anime-tracker/internal/scanner"
 	"anime-tracker/internal/statusicon"
 )
@@ -14,6 +15,7 @@ const (
 	leftPaneWidth  = 46
 	rightPaneWidth = 60
 	barWidth       = 10
+	epBarWidth     = 6
 )
 
 var (
@@ -158,7 +160,17 @@ func (m Model) viewEpisodesPane() string {
 	}
 	for i := start; i < end; i++ {
 		ep := m.episodes[i]
-		line := fmt.Sprintf("%s %s", statusicon.Icon(ep.Status), truncate(ep.FileName, rightPaneWidth-6))
+		extra := ""
+		if ep.Status == db.StatusWatching {
+			if pct, ok := ep.ProgressPercent(); ok {
+				extra = fmt.Sprintf(" %s %3d%%", percentBar(pct, epBarWidth), pct)
+			}
+		}
+		nameWidth := rightPaneWidth - 6 - len(extra)
+		if nameWidth < 10 {
+			nameWidth = 10
+		}
+		line := fmt.Sprintf("%s%s %s", statusicon.Icon(ep.Status), extra, truncate(ep.FileName, nameWidth))
 		if i == m.episodeIdx {
 			line = selectedStyle.Render("> " + line)
 		} else {
@@ -176,14 +188,22 @@ func (m Model) viewEpisodesPane() string {
 }
 
 func progressBar(watched, total int) string {
-	filled := 0
+	percent := 0
 	if total > 0 {
-		filled = watched * barWidth / total
+		percent = watched * 100 / total
 	}
-	if filled > barWidth {
-		filled = barWidth
+	return percentBar(percent, barWidth)
+}
+
+func percentBar(percent, width int) string {
+	if percent < 0 {
+		percent = 0
 	}
-	return "[" + strings.Repeat("#", filled) + strings.Repeat("-", barWidth-filled) + "]"
+	if percent > 100 {
+		percent = 100
+	}
+	filled := percent * width / 100
+	return "[" + strings.Repeat("#", filled) + strings.Repeat("-", width-filled) + "]"
 }
 
 func formatScanSummary(res scanner.Result) string {

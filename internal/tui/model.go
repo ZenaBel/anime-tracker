@@ -124,12 +124,26 @@ func markWatched(ctx context.Context, store *db.Store, ep db.Episode) error {
 		started = &now
 	}
 	now := time.Now()
-	return store.SetStatus(ctx, ep.ID, db.StatusWatched, started, &now)
+	if err := store.SetStatus(ctx, ep.ID, db.StatusWatched, started, &now); err != nil {
+		return err
+	}
+	return store.SetPlaybackProgress(ctx, ep.ID, 0, 0) // clear, episode is done
 }
 
 func markWatchedCmd(store *db.Store, ep db.Episode) tea.Cmd {
 	return func() tea.Msg {
 		return actionDoneMsg{err: markWatched(context.Background(), store, ep)}
+	}
+}
+
+// updateProgressCmd persists the last known mpv playback position for an
+// episode, so a progress bar can be rendered for it.
+func updateProgressCmd(store *db.Store, episodeID int64, positionSecs, durationSecs float64) tea.Cmd {
+	return func() tea.Msg {
+		if durationSecs <= 0 {
+			return actionDoneMsg{}
+		}
+		return actionDoneMsg{err: store.SetPlaybackProgress(context.Background(), episodeID, positionSecs, durationSecs)}
 	}
 }
 

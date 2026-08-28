@@ -13,6 +13,11 @@ type PlaybackResult struct {
 	// Watched is true if mpv reported the file played to its natural end
 	// (EOF), false if it was quit/stopped early or tracking failed.
 	Watched bool
+	// PositionSecs and DurationSecs are the last known playback position
+	// and total duration, in seconds, observed over IPC. DurationSecs is
+	// 0 if it was never learned (e.g. tracking failed immediately).
+	PositionSecs float64
+	DurationSecs float64
 }
 
 // Open launches filePath in the configured player.

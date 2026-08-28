@@ -56,6 +56,12 @@ var listCmd = &cobra.Command{
 		}
 		fmt.Printf("%s (%d/%d)\n", series.Title, series.Watched, series.Total)
 		for _, ep := range episodes {
+			if ep.Status == db.StatusWatching {
+				if pct, ok := ep.ProgressPercent(); ok {
+					fmt.Printf("  %s %3d%% %s\n", statusicon.Icon(ep.Status), pct, ep.FileName)
+					continue
+				}
+			}
 			fmt.Printf("  %s %s\n", statusicon.Icon(ep.Status), ep.FileName)
 		}
 		return nil

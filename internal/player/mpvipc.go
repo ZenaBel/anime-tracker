@@ -55,9 +55,9 @@ func mpvSocketPath() (string, error) {
 func trackMPVPlayback(cmd *exec.Cmd, sockPath string, resultCh chan<- PlaybackResult) {
 	defer close(resultCh)
 
-	watched := false
+	var result PlaybackResult
 	if conn, err := dialMPVSocket(sockPath, mpvSocketDialTimeout); err == nil {
-		watched = readUntilEndFile(conn)
+		result = readPlaybackEvents(conn)
 		conn.Close()
 	}
 
@@ -65,7 +65,7 @@ func trackMPVPlayback(cmd *exec.Cmd, sockPath string, resultCh chan<- PlaybackRe
 	// event, rather than waiting for the mpv process to fully exit
 	// (which can lag behind end-file for window-close/cleanup reasons).
 	// Reap the process and clean up the socket file in the background.
-	resultCh <- PlaybackResult{Watched: watched}
+	resultCh <- result
 	go func() {
 		cmd.Wait()
 		os.Remove(sockPath)
@@ -86,22 +86,46 @@ func dialMPVSocket(sockPath string, timeout time.Duration) (net.Conn, error) {
 	return nil, fmt.Errorf("timed out connecting to mpv ipc socket: %w", lastErr)
 }
 
-// readUntilEndFile reads mpv's JSON IPC event stream until an "end-file"
-// event arrives (or the connection closes), reporting whether playback
-// reached EOF naturally (as opposed to being quit/stopped early).
-func readUntilEndFile(conn net.Conn) bool {
+// readPlaybackEvents subscribes to mpv's time-pos and duration properties
+// and reads its JSON IPC event stream until an "end-file" event arrives
+// (or the connection closes), reporting whether playback reached EOF
+// naturally (as opposed to being quit/stopped early) along with the last
+// known playback position.
+func readPlaybackEvents(conn net.Conn) PlaybackResult {
+	enc := json.NewEncoder(conn)
+	enc.Encode(map[string]any{"command": []any{"observe_property", 1, "time-pos"}})
+	enc.Encode(map[string]any{"command": []any{"observe_property", 2, "duration"}})
+
+	var result PlaybackResult
 	sc := bufio.NewScanner(conn)
 	for sc.Scan() {
-		var evt struct {
-			Event  string `json:"event"`
-			Reason string `json:"reason"`
+		var msg struct {
+			Event  string          `json:"event"`
+			Reason string          `json:"reason"`
+			Name   string          `json:"name"`
+			Data   json.RawMessage `json:"data"`
 		}
-		if err := json.Unmarshal(sc.Bytes(), &evt); err != nil {
+		if err := json.Unmarshal(sc.Bytes(), &msg); err != nil {
 			continue
 		}
-		if evt.Event == "end-file" {
-			return evt.Reason == "eof"
+
+		if msg.Event == "property-change" {
+			var v float64
+			if err := json.Unmarshal(msg.Data, &v); err == nil {
+				switch msg.Name {
+				case "time-pos":
+					result.PositionSecs = v
+				case "duration":
+					result.DurationSecs = v
+				}
+			}
+			continue
+		}
+
+		if msg.Event == "end-file" {
+			result.Watched = msg.Reason == "eof"
+			break
 		}
 	}
-	return false
+	return result
 }

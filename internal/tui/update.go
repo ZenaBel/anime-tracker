@@ -85,7 +85,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case playbackFinishedMsg:
 		if !msg.result.Watched {
 			m.statusMsg = msg.ep.FileName + ": playback ended without reaching EOF — left as watching"
-			return m, nil
+			return m, updateProgressCmd(m.store, msg.ep.ID, msg.result.PositionSecs, msg.result.DurationSecs)
 		}
 		m.statusMsg = msg.ep.FileName + ": marked watched (reached end of file)"
 		return m, markWatchedCmd(m.store, msg.ep)

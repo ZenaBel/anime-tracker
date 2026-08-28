@@ -124,3 +124,68 @@ func TestParseSortMode(t *testing.T) {
 		}
 	}
 }
+
+func TestEpisodeProgressPercent(t *testing.T) {
+	f := func(v float64) *float64 { return &v }
+
+	cases := []struct {
+		name     string
+		pos, dur *float64
+		wantPct  int
+		wantOK   bool
+	}{
+		{"no data", nil, nil, 0, false},
+		{"no duration", f(100), nil, 0, false},
+		{"zero duration", f(100), f(0), 0, false},
+		{"halfway", f(600), f(1200), 50, true},
+		{"clamped over 100", f(1300), f(1200), 100, true},
+		{"just started", f(0), f(1200), 0, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ep := Episode{ResumePositionSecs: tc.pos, DurationSecs: tc.dur}
+			pct, ok := ep.ProgressPercent()
+			if ok != tc.wantOK || pct != tc.wantPct {
+				t.Errorf("ProgressPercent() = (%d, %v), want (%d, %v)", pct, ok, tc.wantPct, tc.wantOK)
+			}
+		})
+	}
+}
+
+func TestSetPlaybackProgress(t *testing.T) {
+	store := newQueriesTestStore(t)
+	ctx := context.Background()
+
+	seriesID, _, err := store.UpsertSeries(ctx, "Frieren", "/lib/Frieren")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpsertEpisodeSeen(ctx, seriesID, "/lib/Frieren/01.mkv", "01.mkv", nil, 0, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	epID := episodeIDByPath(t, store, "/lib/Frieren/01.mkv")
+
+	if err := store.SetPlaybackProgress(ctx, epID, 300, 1200); err != nil {
+		t.Fatal(err)
+	}
+	eps, err := store.ListEpisodesBySeries(ctx, seriesID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pct, ok := eps[0].ProgressPercent()
+	if !ok || pct != 25 {
+		t.Fatalf("after setting progress: ProgressPercent() = (%d, %v), want (25, true)", pct, ok)
+	}
+
+	// durationSecs <= 0 clears the recorded progress.
+	if err := store.SetPlaybackProgress(ctx, epID, 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	eps, err = store.ListEpisodesBySeries(ctx, seriesID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if eps[0].ResumePositionSecs != nil || eps[0].DurationSecs != nil {
+		t.Fatalf("progress not cleared: %+v", eps[0])
+	}
+}

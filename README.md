@@ -65,6 +65,20 @@ Setting `ANIME_TRACKER_PLAYER` to anything else (e.g. `vlc`) just execs that
 binary directly instead of going through the OS opener, with no playback
 tracking.
 
+For resuming an episode where you left off (not just knowing that you did),
+mpv already has this built in independently of anime-tracker: add
+`save-position-on-quit=yes` to `~/.config/mpv/mpv.conf` and mpv will
+remember and restore the exact playback position per file on its own.
+
+### Per-episode progress bar
+
+With `ANIME_TRACKER_PLAYER=mpv`, if you quit before reaching the end, the
+last known playback position and duration (observed live over IPC) are
+saved, and a `watching` episode shows a mini progress bar next to it — e.g.
+`◐ [##----] 33% Title - 05.mkv` — in both the TUI's episode pane and
+`list <series>`. It updates each time you stop partway through an episode;
+finishing one to EOF clears it (the `✓` icon already says "done").
+
 ## How "watched" is detected
 
 On every scan, an episode file that used to be on disk but is no longer

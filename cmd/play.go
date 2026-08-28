@@ -63,12 +63,20 @@ var playCmd = &cobra.Command{
 
 		fmt.Println("waiting for mpv to finish (via IPC) to confirm watched...")
 		result := <-ch
+		if result.DurationSecs > 0 {
+			if err := store.SetPlaybackProgress(ctx, ep.ID, result.PositionSecs, result.DurationSecs); err != nil {
+				return err
+			}
+		}
 		if !result.Watched {
 			fmt.Println("playback ended without reaching the end of the file — left as watching")
 			return nil
 		}
 		finished := time.Now()
 		if err := store.SetStatus(ctx, ep.ID, db.StatusWatched, started, &finished); err != nil {
+			return err
+		}
+		if err := store.SetPlaybackProgress(ctx, ep.ID, 0, 0); err != nil {
 			return err
 		}
 		fmt.Println("marked watched (reached end of file)")
