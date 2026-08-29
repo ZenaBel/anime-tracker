@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"anime-tracker/internal/db"
 	"anime-tracker/internal/qbt"
@@ -80,19 +81,47 @@ func parseRsyncProgress(line string) (FetchProgress, bool) {
 	return FetchProgress{Percent: pct, Rate: m[2]}, true
 }
 
-// streamRsyncProgress reads r line by line, calling onProgress once per
-// distinct percentage reached (throttling out the many identical-percent
-// updates rsync emits per second), and returns the last line read (for
-// error context if the process then fails). Split out from Fetch so the
-// scanning/throttling logic is testable without a real rsync subprocess.
+// progressEmitInterval is how often streamRsyncProgress re-emits a
+// progress update even when the whole-number percentage hasn't moved —
+// otherwise a large file can sit at the same percentage for a long
+// stretch (crossing even one whole percent can mean tens of MB), and
+// throttling by percentage alone would freeze the displayed rate right
+// along with it, looking indistinguishable from a stall.
+const progressEmitInterval = time.Second
+
+// shouldEmitProgress decides whether a freshly parsed progress update
+// should be forwarded: always on a percentage change (so a jump is never
+// missed) or on reaching 100%, always on the very first update
+// (lastEmit's zero value), otherwise only after progressEmitInterval of
+// wall-clock time has passed since the last emit. Pure function so the
+// decision is testable without real sleeps.
+func shouldEmitProgress(percent, lastPercent int, now, lastEmit time.Time) bool {
+	if lastEmit.IsZero() || percent != lastPercent || percent == 100 {
+		return true
+	}
+	return now.Sub(lastEmit) >= progressEmitInterval
+}
+
+// streamRsyncProgress reads r line by line, forwarding progress updates to
+// onProgress per shouldEmitProgress's throttling, and returns the last
+// line read (for error context if the process then fails). Split out from
+// Fetch so the scanning/throttling logic is testable without a real rsync
+// subprocess.
 func streamRsyncProgress(r io.Reader, onProgress func(FetchProgress)) (lastLine string) {
 	lastPercent := -1
+	var lastEmit time.Time
 	sc := bufio.NewScanner(r)
 	for sc.Scan() {
 		line := sc.Text()
 		lastLine = line
-		if p, ok := parseRsyncProgress(line); ok && p.Percent != lastPercent {
+		p, ok := parseRsyncProgress(line)
+		if !ok {
+			continue
+		}
+		now := time.Now()
+		if shouldEmitProgress(p.Percent, lastPercent, now, lastEmit) {
 			lastPercent = p.Percent
+			lastEmit = now
 			onProgress(p)
 		}
 	}
@@ -101,10 +130,12 @@ func streamRsyncProgress(r io.Reader, onProgress func(FetchProgress)) (lastLine 
 
 // Fetch rsyncs remotePath (a file or directory) from sshTarget into
 // localDir, creating localDir first if needed. If onProgress is non-nil,
-// it's called once per distinct percentage reached (not once per raw
-// rsync update, which land many times a second) — so a large episode file
-// shows real, visible progress instead of the CLI/TUI going silent for
-// however long the transfer takes.
+// it's called on percentage changes and at least once a second otherwise
+// (see shouldEmitProgress) — not once per raw rsync update, which land
+// many times a second — so a large episode file shows real, live progress
+// (including the transfer rate, which would otherwise go stale for
+// however long the file sits at one whole percent) instead of the
+// CLI/TUI looking like it's silently stalled.
 func Fetch(ctx context.Context, sshTarget, remotePath, localDir string, onProgress func(FetchProgress)) error {
 	if err := os.MkdirAll(localDir, 0o755); err != nil {
 		return fmt.Errorf("creating %s: %w", localDir, err)

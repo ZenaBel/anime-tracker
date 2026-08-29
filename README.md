@@ -261,11 +261,12 @@ silently misplaced; fix it either by giving that rule its own save path
 first, then re-run `sync-downloads`.
 
 While a file's actually transferring, both show live progress read from
-rsync's own output — a `%d%%` figure plus transfer rate, updated as it
-changes (not spammed on every rsync tick) — instead of going silent for
-however long a large episode takes. On the CLI this overwrites one line in
-place (`fetching <name>: NN% (rate)`); in the TUI it's the status line
-under `S`.
+rsync's own output — a `%d%%` figure plus transfer rate, updated on every
+percentage change and at least once a second regardless (not spammed on
+every rsync tick, but not frozen mid-percent on a large file either, where
+one whole percent can be tens of MB) — instead of going silent for however
+long a large episode takes. On the CLI this overwrites one line in place
+(`fetching <name>: NN% (rate)`); in the TUI it's the status line under `S`.
 
 There's no background polling — run `sync-downloads` whenever you want to
 check (a cron job or a shell alias works fine for that).

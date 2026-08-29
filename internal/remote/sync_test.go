@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"anime-tracker/internal/db"
 )
@@ -143,6 +144,37 @@ func TestRemapPath(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := remapPath(tc.rpath, tc.containerRoot, tc.hostRoot); got != tc.want {
 				t.Errorf("remapPath(%q, %q, %q) = %q, want %q", tc.rpath, tc.containerRoot, tc.hostRoot, got, tc.want)
+			}
+		})
+	}
+}
+
+// Regression test for a real repro: a large file sat at "0%" with a
+// frozen "0.00kB/s" the whole time it was actually transferring, because
+// the old percent-only throttle never re-emitted while the whole-number
+// percentage stayed the same — which for a large file can be a long
+// stretch of real time. shouldEmitProgress must re-emit periodically even
+// with no percentage change, so the shown rate stays live.
+func TestShouldEmitProgress(t *testing.T) {
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	cases := []struct {
+		name                 string
+		percent, lastPercent int
+		now, lastEmit        time.Time
+		want                 bool
+	}{
+		{"first ever update (lastEmit zero)", 0, -1, base, time.Time{}, true},
+		{"percent changed, no time elapsed", 1, 0, base, base, true},
+		{"percent unchanged, <1s elapsed: suppressed", 0, 0, base.Add(500 * time.Millisecond), base, false},
+		{"percent unchanged, >=1s elapsed: re-emit for a live rate", 0, 0, base.Add(1500 * time.Millisecond), base, true},
+		{"percent unchanged, exactly 1s elapsed: re-emit", 5, 5, base.Add(time.Second), base, true},
+		{"reaching 100% always emits, even with no time elapsed", 100, 100, base, base, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := shouldEmitProgress(tc.percent, tc.lastPercent, tc.now, tc.lastEmit); got != tc.want {
+				t.Errorf("shouldEmitProgress(%d, %d, ...) = %v, want %v", tc.percent, tc.lastPercent, got, tc.want)
 			}
 		})
 	}
