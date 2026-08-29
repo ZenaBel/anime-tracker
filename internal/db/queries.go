@@ -433,6 +433,58 @@ func (s *Store) DeleteEpisode(ctx context.Context, episodeID int64) error {
 	return nil
 }
 
+// GetSetting looks up a config value by key (see cmd/config.go for the
+// keys this app uses), returning ok=false if it isn't set.
+func (s *Store) GetSetting(ctx context.Context, key string) (string, bool, error) {
+	var value string
+	err := s.db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, key).Scan(&value)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("querying setting %q: %w", key, err)
+	}
+	return value, true, nil
+}
+
+// SetSetting upserts a config value.
+func (s *Store) SetSetting(ctx context.Context, key, value string) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO settings (key, value) VALUES (?, ?)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value`, key, value)
+	if err != nil {
+		return fmt.Errorf("setting %q: %w", key, err)
+	}
+	return nil
+}
+
+// UnsetSetting removes a config value, if present.
+func (s *Store) UnsetSetting(ctx context.Context, key string) error {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM settings WHERE key = ?`, key); err != nil {
+		return fmt.Errorf("unsetting %q: %w", key, err)
+	}
+	return nil
+}
+
+// AllSettings returns every stored config value, keyed by name.
+func (s *Store) AllSettings(ctx context.Context) (map[string]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT key, value FROM settings`)
+	if err != nil {
+		return nil, fmt.Errorf("querying settings: %w", err)
+	}
+	defer rows.Close()
+
+	out := make(map[string]string)
+	for rows.Next() {
+		var k, v string
+		if err := rows.Scan(&k, &v); err != nil {
+			return nil, fmt.Errorf("scanning setting: %w", err)
+		}
+		out[k] = v
+	}
+	return out, rows.Err()
+}
+
 type rowScanner interface {
 	Scan(dest ...any) error
 }

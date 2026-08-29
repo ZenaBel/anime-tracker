@@ -54,6 +54,9 @@ func init() {
 	rootCmd.AddCommand(deleteSeriesCmd)
 	rootCmd.AddCommand(renameEpisodeCmd)
 	rootCmd.AddCommand(deleteEpisodeCmd)
+	rootCmd.AddCommand(configCmd)
+	rootCmd.AddCommand(downloadCmd)
+	rootCmd.AddCommand(syncDownloadsCmd)
 	rootCmd.AddCommand(tuiCmd)
 }
 

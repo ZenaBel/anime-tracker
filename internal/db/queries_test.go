@@ -199,6 +199,56 @@ func TestSetPlaybackProgress(t *testing.T) {
 	}
 }
 
+func TestSettings(t *testing.T) {
+	store := newQueriesTestStore(t)
+	ctx := context.Background()
+
+	if _, ok, err := store.GetSetting(ctx, "qbt.url"); err != nil {
+		t.Fatal(err)
+	} else if ok {
+		t.Fatal("expected no value for an unset key")
+	}
+
+	if err := store.SetSetting(ctx, "qbt.url", "https://seedbox:8080"); err != nil {
+		t.Fatal(err)
+	}
+	if v, ok, err := store.GetSetting(ctx, "qbt.url"); err != nil {
+		t.Fatal(err)
+	} else if !ok || v != "https://seedbox:8080" {
+		t.Fatalf("GetSetting() = (%q, %v), want (https://seedbox:8080, true)", v, ok)
+	}
+
+	// Setting an existing key again overwrites, not duplicates.
+	if err := store.SetSetting(ctx, "qbt.url", "https://seedbox:9090"); err != nil {
+		t.Fatal(err)
+	}
+	if v, _, err := store.GetSetting(ctx, "qbt.url"); err != nil {
+		t.Fatal(err)
+	} else if v != "https://seedbox:9090" {
+		t.Fatalf("GetSetting() after overwrite = %q, want https://seedbox:9090", v)
+	}
+
+	if err := store.SetSetting(ctx, "remote.root", "/downloads/anime"); err != nil {
+		t.Fatal(err)
+	}
+	all, err := store.AllSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 2 || all["qbt.url"] != "https://seedbox:9090" || all["remote.root"] != "/downloads/anime" {
+		t.Fatalf("AllSettings() = %+v", all)
+	}
+
+	if err := store.UnsetSetting(ctx, "qbt.url"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := store.GetSetting(ctx, "qbt.url"); err != nil {
+		t.Fatal(err)
+	} else if ok {
+		t.Fatal("expected value gone after UnsetSetting")
+	}
+}
+
 func TestFirstUnwatchedIndex(t *testing.T) {
 	cases := []struct {
 		name     string

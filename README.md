@@ -38,6 +38,11 @@ anime-tracker rename-series <query> <new-title>    # rename a series' folder + t
 anime-tracker delete-series <query>                # permanently delete a series' folder + all its files
 anime-tracker rename-episode <query> <new-name>    # rename an episode's file (keeps its extension)
 anime-tracker delete-episode <query>               # permanently delete one episode's file
+anime-tracker config set <key> [value]             # configure remote qBittorrent/SSH (see below)
+anime-tracker config show                          # print current config (password masked)
+anime-tracker config unset <key>
+anime-tracker download <series-query> <magnet-or-torrent-url>   # queue a download on the remote qBittorrent
+anime-tracker sync-downloads [--dry-run]           # pull finished remote downloads into the library + rescan
 ```
 
 The four `rename-*`/`delete-*` commands prompt for confirmation (`[y/N]`)
@@ -128,6 +133,61 @@ episodes further down the queue are left untouched. Requires
 `ANIME_TRACKER_PLAYER=mpv`, since it's built on the same IPC socket as the
 rest of the mpv integration.
 
+### Remote qBittorrent + RSS
+
+For a setup where the torrent client (qBittorrent) runs on a different
+machine from the one running anime-tracker and holding the library — e.g. a
+seedbox — `download` and `sync-downloads` close that loop over
+qBittorrent's WebUI API and `rsync`/`ssh`.
+
+**One-time setup:**
+
+```sh
+anime-tracker config set qbt.url https://seedbox.example.com:8080
+anime-tracker config set qbt.username <your qBittorrent WebUI username>
+anime-tracker config set qbt.password        # prompts, hidden input
+anime-tracker config set remote.ssh_target <user>@seedbox.example.com   # or an ~/.ssh/config alias
+anime-tracker config set remote.root /path/on/the/remote/disk           # mirrors the local library root, one folder per series
+anime-tracker config set qbt.insecure_tls true   # only if the WebUI uses a self-signed cert
+```
+
+These are stored in anime-tracker's own SQLite db (in plaintext, same
+posture as `ANIME_TRACKER_PLAYER` in `.bashrc` — this is a personal,
+single-user tool). Requires `rsync` and `ssh` on `PATH` locally, with
+key-based SSH access to the remote host already working (`ssh
+<remote.ssh_target>` should just connect, no password prompt) — this is the
+one part of anime-tracker that isn't a dependency-free static binary.
+
+**`anime-tracker download <series-query> <magnet-or-torrent-url>`** fuzzy-
+resolves the series (same matching as `play`/`watch`), then tells the
+remote qBittorrent to grab the given magnet link or `.torrent` URL, saved
+to `<remote.root>/<Series Title>` and tagged `anime-tracker`.
+
+**RSS**: anime-tracker doesn't parse RSS feeds itself — that's left to
+qBittorrent's own built-in RSS + Auto Downloading feature, configured in
+its WebUI. For an RSS rule's downloads to be picked up automatically, set
+the rule's "Save files to a different directory" to
+`<remote.root>/<Series Folder Name>` (matching an existing local series
+folder's name exactly, case-insensitively) and add the tag `anime-tracker`
+to it — the same convention `download` uses. A rule for a brand-new show
+(no matching local folder yet) is fine too; `sync-downloads` creates the
+folder on first sync.
+
+**`anime-tracker sync-downloads`** looks up every `anime-tracker`-tagged
+torrent, and for each one that's finished (`progress >= 1.0`, regardless of
+whether it got there via `download` or an RSS rule): rsyncs it from the
+remote host into the matching local series folder, flattens away any
+nested batch-release folder qBittorrent may have kept (the scanner only
+looks at direct `Series/*.mkv` files), then removes the `anime-tracker` tag
+so it isn't pulled again — the torrent itself is left alone, still seeding.
+Finishes with a normal library scan. A torrent still mid-download is left
+untouched and picked up on a later run; one whose transfer fails keeps its
+tag and is retried next time too. `--dry-run` lists what's finished without
+touching the network or filesystem.
+
+There's no background polling — run `sync-downloads` whenever you want to
+check (a cron job or a shell alias works fine for that).
+
 ## How "watched" is detected
 
 On every scan, an episode file that used to be on disk but is no longer
@@ -148,3 +208,6 @@ presence as the source of truth.
 - Quality-variant duplicate folders (e.g. the same show downloaded as both
   `... [WEB-DL 1080p]` and `... [WEB-DL 1080p HEVC]`) are tracked as two
   independent series, since each top-level folder maps to one series.
+- `download`/`sync-downloads` (see above) are the one feature that isn't
+  dependency-free: they shell out to `rsync`/`ssh`, and assume the remote
+  host is Linux-like and already reachable over key-based SSH.

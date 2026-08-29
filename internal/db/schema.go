@@ -30,6 +30,11 @@ CREATE TABLE IF NOT EXISTS episodes (
 
 CREATE INDEX IF NOT EXISTS idx_episodes_series ON episodes(series_id);
 CREATE INDEX IF NOT EXISTS idx_episodes_status ON episodes(status);
+
+CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 `
 
 // addedColumns lists columns introduced after the initial schema, for
