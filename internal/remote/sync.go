@@ -21,6 +21,7 @@ import (
 	"anime-tracker/internal/db"
 	"anime-tracker/internal/qbt"
 	"anime-tracker/internal/scanner"
+	"anime-tracker/internal/search"
 	"anime-tracker/internal/settings"
 )
 
@@ -222,6 +223,30 @@ func remapPath(rpath, containerRoot, hostRoot string) string {
 	return rpath
 }
 
+// resolveSeriesNameForSync determines which series a completed torrent
+// belongs to. Normally that's the last path segment of its save path — the
+// per-series subfolder convention download/rss-download and a properly
+// configured qBittorrent Auto Downloading rule (with its own "save to a
+// different directory") both follow. But if a torrent was saved with no
+// subfolder at all — save path equal to containerRoot exactly, e.g. a rule
+// left on qBittorrent's plain default save location — that "segment"
+// would just be containerRoot's own folder name (e.g. everything piling
+// into one shared local "downloads" folder instead of one per series).
+// In that degenerate case, the series is guessed from the torrent's own
+// name instead (see search.GuessSeriesForTitle), matched only against
+// series already tracked locally. ok is false if neither approach can
+// determine one.
+func resolveSeriesNameForSync(savePath, containerRoot, torrentName string, allSeries []db.SeriesProgress) (string, bool) {
+	if containerRoot != "" && strings.TrimRight(savePath, "/") == strings.TrimRight(containerRoot, "/") {
+		guess, ok := search.GuessSeriesForTitle(allSeries, torrentName)
+		if !ok {
+			return "", false
+		}
+		return guess.Title, true
+	}
+	return path.Base(savePath), true
+}
+
 // SyncResult summarizes one SyncDownloads call.
 type SyncResult struct {
 	Synced     []string // torrent names successfully pulled in
@@ -283,8 +308,22 @@ func SyncDownloads(ctx context.Context, store *db.Store, libraryRoot string, onP
 		}
 	}
 
+	var allSeries []db.SeriesProgress
+	if len(completed) > 0 {
+		allSeries, err = store.ListSeriesWithProgress(ctx, db.SortAlphaAsc)
+		if err != nil {
+			return SyncResult{}, err
+		}
+	}
+
 	for _, t := range completed {
-		seriesName := path.Base(t.SavePath) // last path segment is unaffected by the remap either way
+		seriesName, ok := resolveSeriesNameForSync(t.SavePath, containerRoot, t.Name, allSeries)
+		if !ok {
+			res.Failed = append(res.Failed, fmt.Sprintf(
+				"%s: saved directly to %s with no per-series subfolder, and no tracked series name matches it — set this torrent's/RSS rule's save path to %s/<Series>, or track a matching series first",
+				t.Name, containerRoot, containerRoot))
+			continue
+		}
 		localDir, isNew, err := ResolveLocalSeriesDir(libraryRoot, seriesName)
 		if err != nil {
 			res.Failed = append(res.Failed, fmt.Sprintf("%s: %v", t.Name, err))

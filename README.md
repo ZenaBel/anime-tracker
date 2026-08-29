@@ -235,6 +235,23 @@ touching the network or filesystem. `S` in the TUI runs the same thing
 (no `--dry-run` there) and refreshes the series/episode panes right away if
 anything came in.
 
+**Which local folder a synced torrent lands in** normally comes from its
+save path's last segment — the `<remote.root>/<Series>` convention
+`download`/`rss-download` always follow, and a properly configured
+Auto Downloading rule does too. A torrent saved with *no* per-series
+subfolder at all (save path exactly equal to `remote.root` — a rule left
+on qBittorrent's plain default save location, with no per-rule override)
+has no folder segment to read a series from; rather than dumping it into
+one shared local folder literally named after `remote.root`'s own last
+segment (e.g. everything piling into a local `downloads/`), `sync-downloads`
+instead guesses the series from the torrent's own name — the same
+name-contains-series-title check `rss-download`'s auto-guess uses — matched
+only against series you already track locally. If nothing matches, that
+torrent is reported as failed with an explicit reason instead of being
+silently misplaced; fix it either by giving that rule its own save path
+(`<remote.root>/<Series Folder Name>`) or by tracking the series locally
+first, then re-run `sync-downloads`.
+
 While a file's actually transferring, both show live progress read from
 rsync's own output — a `%d%%` figure plus transfer rate, updated as it
 changes (not spammed on every rsync tick) — instead of going silent for

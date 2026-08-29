@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"anime-tracker/internal/db"
 )
 
 func TestBuildRsyncArgs(t *testing.T) {
@@ -56,6 +58,48 @@ func TestParseRsyncProgress(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestResolveSeriesNameForSync(t *testing.T) {
+	allSeries := []db.SeriesProgress{
+		{ID: 1, Title: "Frieren"},
+		{ID: 2, Title: "Pyl Myobiusa"},
+	}
+
+	t.Run("proper per-series subfolder used as-is", func(t *testing.T) {
+		name, ok := resolveSeriesNameForSync("/downloads/Frieren", "/downloads", "[SubsPlease] Frieren - 05 [1080p]", allSeries)
+		if !ok || name != "Frieren" {
+			t.Fatalf("resolveSeriesNameForSync() = (%q, %v), want (Frieren, true)", name, ok)
+		}
+	})
+
+	t.Run("containerRoot unset: falls back to plain basename regardless", func(t *testing.T) {
+		name, ok := resolveSeriesNameForSync("/downloads", "", "[SubsPlease] Frieren - 05 [1080p]", allSeries)
+		if !ok || name != "downloads" {
+			t.Fatalf("resolveSeriesNameForSync() = (%q, %v), want (downloads, true) — no containerRoot configured means no guard", name, ok)
+		}
+	})
+
+	t.Run("saved flat (no subfolder): guesses from torrent name", func(t *testing.T) {
+		name, ok := resolveSeriesNameForSync("/downloads", "/downloads", "[SubsPlease] Pyl Myobiusa - 08 [1080p]", allSeries)
+		if !ok || name != "Pyl Myobiusa" {
+			t.Fatalf("resolveSeriesNameForSync() = (%q, %v), want (Pyl Myobiusa, true)", name, ok)
+		}
+	})
+
+	t.Run("saved flat, trailing slash on containerRoot still matches", func(t *testing.T) {
+		name, ok := resolveSeriesNameForSync("/downloads", "/downloads/", "[SubsPlease] Frieren - 05 [1080p]", allSeries)
+		if !ok || name != "Frieren" {
+			t.Fatalf("resolveSeriesNameForSync() = (%q, %v), want (Frieren, true)", name, ok)
+		}
+	})
+
+	t.Run("saved flat, no tracked series matches the torrent name: fails clearly", func(t *testing.T) {
+		_, ok := resolveSeriesNameForSync("/downloads", "/downloads", "[SubsPlease] Some Unrelated Show - 01 [1080p]", allSeries)
+		if ok {
+			t.Fatal("expected resolveSeriesNameForSync to fail when nothing matches, not guess wrong")
+		}
+	})
 }
 
 func TestRemapPath(t *testing.T) {
