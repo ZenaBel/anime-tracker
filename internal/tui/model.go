@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"sort"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -66,22 +67,82 @@ type Model struct {
 }
 
 // rssStep distinguishes the RSS overlay's two stages: browsing fetched
-// articles, then confirming which series a chosen one downloads into.
+// feeds/articles, then confirming which series a chosen one downloads
+// into.
 type rssStep int
 
 const (
-	rssStepArticles rssStep = iota
+	rssStepBrowse rssStep = iota
 	rssStepConfirmSeries
 )
+
+// rssFocus is which of the RSS overlay's two browse-step panes has focus,
+// mirroring the main view's series/episodes pane split.
+type rssFocus int
+
+const (
+	rssFocusFeeds rssFocus = iota
+	rssFocusArticles
+)
+
+// rssFeedGroup is one row in the feeds pane: a real subscribed feed, or
+// (as the first entry, Name == rssUnreadFeedName) a synthetic aggregate of
+// every unread article across all feeds — matching qBittorrent's own WebUI
+// RSS panel, which shows the same "Unread" pseudo-feed above the real
+// ones.
+type rssFeedGroup struct {
+	Name     string
+	Unread   int
+	Articles []qbt.RSSArticle
+}
+
+const rssUnreadFeedName = "Unread"
+
+// groupArticlesByFeed builds the feeds pane's rows from a flat article
+// list: the synthetic "Unread" aggregate first, then each real feed
+// (alphabetical) with its own full article list (read and unread alike,
+// same as selecting a specific feed in qBittorrent's own RSS panel).
+func groupArticlesByFeed(all []qbt.RSSArticle) []rssFeedGroup {
+	var unread []qbt.RSSArticle
+	byFeed := make(map[string][]qbt.RSSArticle)
+	var names []string
+	for _, a := range all {
+		if !a.IsRead {
+			unread = append(unread, a)
+		}
+		if _, ok := byFeed[a.FeedName]; !ok {
+			names = append(names, a.FeedName)
+		}
+		byFeed[a.FeedName] = append(byFeed[a.FeedName], a)
+	}
+	sort.Strings(names)
+	qbt.SortArticlesNewestFirst(unread)
+
+	groups := []rssFeedGroup{{Name: rssUnreadFeedName, Unread: len(unread), Articles: unread}}
+	for _, name := range names {
+		arts := byFeed[name]
+		qbt.SortArticlesNewestFirst(arts)
+		unreadCount := 0
+		for _, a := range arts {
+			if !a.IsRead {
+				unreadCount++
+			}
+		}
+		groups = append(groups, rssFeedGroup{Name: name, Unread: unreadCount, Articles: arts})
+	}
+	return groups
+}
 
 // rssState holds the RSS overlay's state; active whenever active is true.
 type rssState struct {
 	active  bool
 	loading bool
 
-	step     rssStep
-	articles []qbt.RSSArticle
-	idx      int
+	step       rssStep
+	feeds      []rssFeedGroup
+	feedIdx    int
+	articleIdx int
+	focus      rssFocus
 
 	// populated once step == rssStepConfirmSeries
 	article       qbt.RSSArticle
@@ -89,6 +150,15 @@ type rssState struct {
 	seriesResults []search.Result
 	seriesIdx     int
 	submitting    bool
+}
+
+// currentArticles returns the article list for whichever feed is
+// currently selected.
+func (r rssState) currentArticles() []qbt.RSSArticle {
+	if r.feedIdx < 0 || r.feedIdx >= len(r.feeds) {
+		return nil
+	}
+	return r.feeds[r.feedIdx].Articles
 }
 
 // manageKind identifies which rename/delete overlay (if any) is active.
@@ -228,7 +298,8 @@ func unsetSettingCmd(store *db.Store, key string) tea.Cmd {
 }
 
 // loadRSSArticlesCmd fetches every article qBittorrent's own RSS reader
-// has already parsed, filtered to unread ones and sorted newest first.
+// has already parsed, across every feed; grouping into feeds/unread-count
+// happens once it lands (see groupArticlesByFeed).
 func loadRSSArticlesCmd(store *db.Store) tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
@@ -237,17 +308,7 @@ func loadRSSArticlesCmd(store *db.Store) tea.Cmd {
 			return rssArticlesLoadedMsg{err: err}
 		}
 		all, err := client.ListRSSArticles(ctx)
-		if err != nil {
-			return rssArticlesLoadedMsg{err: err}
-		}
-		var unread []qbt.RSSArticle
-		for _, a := range all {
-			if !a.IsRead {
-				unread = append(unread, a)
-			}
-		}
-		qbt.SortArticlesNewestFirst(unread)
-		return rssArticlesLoadedMsg{articles: unread}
+		return rssArticlesLoadedMsg{articles: all, err: err}
 	}
 }
 

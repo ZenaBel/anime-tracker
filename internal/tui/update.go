@@ -200,8 +200,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.err = nil
-		m.rss.articles = msg.articles
-		m.rss.idx = 0
+		m.rss.feeds = groupArticlesByFeed(msg.articles)
+		m.rss.feedIdx = 0
+		m.rss.articleIdx = 0
+		m.rss.focus = rssFocusFeeds
 		return m, nil
 
 	case rssDownloadDoneMsg:
@@ -539,6 +541,10 @@ func (m Model) handleRSSKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 }
 
+// handleRSSArticlesKey handles the browse step: a feeds pane on the left
+// (a synthetic "Unread" aggregate plus each real subscribed feed) and that
+// feed's articles on the right, navigated the same way as the main view's
+// series/episodes panes.
 func (m Model) handleRSSArticlesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
@@ -546,22 +552,53 @@ func (m Model) handleRSSArticlesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "up", "k":
-		if len(m.rss.articles) > 0 {
-			m.rss.idx = clamp(m.rss.idx-1, 0, len(m.rss.articles)-1)
+		switch m.rss.focus {
+		case rssFocusFeeds:
+			if len(m.rss.feeds) > 0 {
+				m.rss.feedIdx = clamp(m.rss.feedIdx-1, 0, len(m.rss.feeds)-1)
+				m.rss.articleIdx = 0
+			}
+		case rssFocusArticles:
+			if arts := m.rss.currentArticles(); len(arts) > 0 {
+				m.rss.articleIdx = clamp(m.rss.articleIdx-1, 0, len(arts)-1)
+			}
 		}
 		return m, nil
 
 	case "down", "j":
-		if len(m.rss.articles) > 0 {
-			m.rss.idx = clamp(m.rss.idx+1, 0, len(m.rss.articles)-1)
+		switch m.rss.focus {
+		case rssFocusFeeds:
+			if len(m.rss.feeds) > 0 {
+				m.rss.feedIdx = clamp(m.rss.feedIdx+1, 0, len(m.rss.feeds)-1)
+				m.rss.articleIdx = 0
+			}
+		case rssFocusArticles:
+			if arts := m.rss.currentArticles(); len(arts) > 0 {
+				m.rss.articleIdx = clamp(m.rss.articleIdx+1, 0, len(arts)-1)
+			}
+		}
+		return m, nil
+
+	case "left", "h":
+		m.rss.focus = rssFocusFeeds
+		return m, nil
+
+	case "right", "l":
+		if m.rss.focus == rssFocusFeeds {
+			m.rss.focus = rssFocusArticles
 		}
 		return m, nil
 
 	case "enter":
-		if m.rss.idx < 0 || m.rss.idx >= len(m.rss.articles) {
+		if m.rss.focus == rssFocusFeeds {
+			m.rss.focus = rssFocusArticles
 			return m, nil
 		}
-		article := m.rss.articles[m.rss.idx]
+		arts := m.rss.currentArticles()
+		if m.rss.articleIdx < 0 || m.rss.articleIdx >= len(arts) {
+			return m, nil
+		}
+		article := arts[m.rss.articleIdx]
 		m.rss.step = rssStepConfirmSeries
 		m.rss.article = article
 		if guess, ok := search.GuessSeriesForTitle(m.series, article.Title); ok {
@@ -578,7 +615,7 @@ func (m Model) handleRSSArticlesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleRSSConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyEsc:
-		m.rss.step = rssStepArticles // back to the article list, not fully closing
+		m.rss.step = rssStepBrowse // back to the feed/article panes, not fully closing
 		return m, nil
 
 	case tea.KeyEnter:

@@ -379,33 +379,42 @@ func (m Model) viewRSS() string {
 		return searchPaneStyle.Render(b.String())
 	}
 
-	b.WriteString(focusedTitle.Render("RSS"))
-	b.WriteString(dimTitle.Render(" (unread articles from qBittorrent's RSS feeds)"))
-	b.WriteString("\n\n")
+	left := m.viewRSSFeedsPane()
+	right := m.viewRSSArticlesPane()
+	body := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 
+	var footer strings.Builder
 	if m.rss.loading {
-		b.WriteString(dimTitle.Render("loading..."))
-		b.WriteString("\n")
+		footer.WriteString(helpStyle.Render("loading..."))
+	} else {
+		footer.WriteString(helpStyle.Render("↑/↓ or j/k: move  ←/→ or h/l: switch pane  enter: open/pick & download  esc: close"))
 	}
 	if m.err != nil {
-		b.WriteString(errStyle.Render("error: " + m.err.Error()))
-		b.WriteString("\n\n")
-	}
-	if !m.rss.loading && m.err == nil && len(m.rss.articles) == 0 {
-		b.WriteString(dimTitle.Render("(no unread articles)"))
-		b.WriteString("\n")
+		footer.WriteString("\n")
+		footer.WriteString(errStyle.Render("error: " + m.err.Error()))
 	}
 
-	maxVisible := m.visibleRows()
-	start, end := visibleWindow(len(m.rss.articles), m.rss.idx, maxVisible)
-	if start > 0 {
-		b.WriteString(dimTitle.Render(fmt.Sprintf("  ↑ %d more", start)))
-		b.WriteString("\n")
+	return body + "\n\n" + footer.String()
+}
+
+func (m Model) viewRSSFeedsPane() string {
+	title := "RSS Feeds"
+	if m.rss.focus == rssFocusFeeds {
+		title = focusedTitle.Render(title)
+	} else {
+		title = dimTitle.Render(title)
 	}
-	for i := start; i < end; i++ {
-		a := m.rss.articles[i]
-		line := fmt.Sprintf("[%s] %s", truncate(a.FeedName, 20), truncate(a.Title, 60))
-		if i == m.rss.idx {
+
+	var b strings.Builder
+	b.WriteString(title)
+	b.WriteString("\n\n")
+
+	if len(m.rss.feeds) == 0 && !m.rss.loading {
+		b.WriteString(dimTitle.Render("(no feeds)"))
+	}
+	for i, f := range m.rss.feeds {
+		line := fmt.Sprintf("%-20s (%d)", truncate(f.Name, 20), f.Unread)
+		if i == m.rss.feedIdx {
 			line = selectedStyle.Render("> " + line)
 		} else {
 			line = "  " + line
@@ -413,15 +422,54 @@ func (m Model) viewRSS() string {
 		b.WriteString(line)
 		b.WriteString("\n")
 	}
-	if end < len(m.rss.articles) {
-		b.WriteString(dimTitle.Render(fmt.Sprintf("  ↓ %d more", len(m.rss.articles)-end)))
+
+	return leftPaneStyle.Render(b.String())
+}
+
+func (m Model) viewRSSArticlesPane() string {
+	title := "Articles"
+	if m.rss.focus == rssFocusArticles {
+		title = focusedTitle.Render(title)
+	} else {
+		title = dimTitle.Render(title)
+	}
+
+	var b strings.Builder
+	b.WriteString(title)
+	b.WriteString("\n\n")
+
+	articles := m.rss.currentArticles()
+	if len(articles) == 0 && !m.rss.loading {
+		b.WriteString(dimTitle.Render("(no articles)"))
+	}
+
+	maxVisible := m.visibleRows()
+	start, end := visibleWindow(len(articles), m.rss.articleIdx, maxVisible)
+	if start > 0 {
+		b.WriteString(dimTitle.Render(fmt.Sprintf("  ↑ %d more", start)))
+		b.WriteString("\n")
+	}
+	for i := start; i < end; i++ {
+		a := articles[i]
+		read := ""
+		if a.IsRead {
+			read = " (read)"
+		}
+		line := truncate(a.Title, rightPaneWidth-8) + read
+		if i == m.rss.articleIdx {
+			line = selectedStyle.Render("> " + line)
+		} else {
+			line = "  " + line
+		}
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+	if end < len(articles) {
+		b.WriteString(dimTitle.Render(fmt.Sprintf("  ↓ %d more", len(articles)-end)))
 		b.WriteString("\n")
 	}
 
-	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("↑/↓: move  enter: pick series & download  esc: close"))
-
-	return searchPaneStyle.Render(b.String())
+	return rightPaneStyle.Render(b.String())
 }
 
 func formatSearchResult(r search.Result) string {
