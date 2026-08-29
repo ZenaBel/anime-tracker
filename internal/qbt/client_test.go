@@ -2,6 +2,7 @@ package qbt
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -125,6 +126,37 @@ func TestAddTorrent_Rejected(t *testing.T) {
 	c, _ := New(srv.URL, false)
 	if err := c.AddTorrent(context.Background(), "bogus", "/x", "anime-tracker"); err == nil {
 		t.Fatal("expected error when qBittorrent rejects the torrent")
+	}
+}
+
+// Regression test for a real qBittorrent instance that answered a
+// successful add with 202 Accepted and a JSON summary (the torrent was
+// still resolving magnet metadata, not added outright yet) rather than the
+// documented 200 + "Ok." — that was being treated as a failure.
+func TestAddTorrent_202AcceptedJSONPending(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		fmt.Fprint(w, `{"added_torrent_ids":[],"failure_count":0,"pending_count":1,"success_count":0}`)
+	}))
+	defer srv.Close()
+
+	c, _ := New(srv.URL, false)
+	if err := c.AddTorrent(context.Background(), "magnet:?xt=urn:btih:abc", "/downloads/Show", "anime-tracker"); err != nil {
+		t.Fatalf("AddTorrent() error = %v, want success (pending is not a failure)", err)
+	}
+}
+
+func TestAddTorrent_JSONFailureCount(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"added_torrent_ids":[],"failure_count":1,"pending_count":0,"success_count":0}`)
+	}))
+	defer srv.Close()
+
+	c, _ := New(srv.URL, false)
+	if err := c.AddTorrent(context.Background(), "bogus", "/x", "anime-tracker"); err == nil {
+		t.Fatal("expected error when the JSON summary reports a failure")
 	}
 }
 

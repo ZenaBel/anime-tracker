@@ -90,15 +90,33 @@ func (c *Client) Login(ctx context.Context, username, password string) error {
 
 // AddTorrent submits a magnet link or direct .torrent URL for download,
 // saved under savePath and tagged with tags (comma-separated).
+//
+// Response shape has varied across qBittorrent versions in the wild: older
+// ones answer with plain "Ok."/"Fails." text and status 200; newer ones
+// answer with a JSON summary (added/pending/failure counts) and can use
+// 202 Accepted when the torrent is only queued for processing so far (e.g.
+// still resolving a magnet's metadata) rather than added outright. Both
+// are treated as success unless something actually reports a failure.
 func (c *Client) AddTorrent(ctx context.Context, torrentURL, savePath, tags string) error {
 	form := url.Values{"urls": {torrentURL}, "savepath": {savePath}, "tags": {tags}}
 	body, status, err := c.post(ctx, "/api/v2/torrents/add", form)
 	if err != nil {
 		return fmt.Errorf("adding torrent: %w", err)
 	}
-	if status != http.StatusOK {
+	if status < 200 || status >= 300 {
 		return fmt.Errorf("adding torrent: unexpected status %d: %s", status, strings.TrimSpace(body))
 	}
+
+	var summary struct {
+		FailureCount int `json:"failure_count"`
+	}
+	if jsonErr := json.Unmarshal([]byte(body), &summary); jsonErr == nil {
+		if summary.FailureCount > 0 {
+			return fmt.Errorf("qBittorrent rejected the torrent: %s", strings.TrimSpace(body))
+		}
+		return nil
+	}
+
 	if strings.TrimSpace(body) == "Fails." {
 		return fmt.Errorf("qBittorrent rejected the torrent (unsupported link or duplicate)")
 	}
