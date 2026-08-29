@@ -33,14 +33,25 @@ import (
 // --outbuf=L line-buffers it so it arrives as clean newline-terminated
 // lines over the pipe instead of the interactive carriage-return-only
 // updates rsync uses when it thinks it's talking to a terminal.
+//
+// If remotePath's own last segment is the same as localDir's (a torrent
+// whose content_path is itself a wrapping folder sharing the series'
+// name — some releases/qBittorrent do this even for what's logically one
+// episode), a trailing slash is added to the source so rsync copies its
+// *contents* into localDir directly, instead of nesting that whole
+// same-named folder inside itself.
 func buildRsyncArgs(sshTarget, remotePath, localDir string) []string {
+	src := sshTarget + ":" + remotePath
+	if path.Base(remotePath) == filepath.Base(strings.TrimRight(localDir, string(filepath.Separator))) {
+		src += "/"
+	}
 	return []string{
 		"-avz",
 		"-s",
 		"--info=progress2",
 		"--outbuf=L",
 		"-e", "ssh",
-		sshTarget + ":" + remotePath,
+		src,
 		localDir + string(filepath.Separator),
 	}
 }
@@ -130,8 +141,13 @@ func Fetch(ctx context.Context, sshTarget, remotePath, localDir string, onProgre
 // itself (a torrent may have arrived as a release-group-named batch
 // folder, but the scanner only looks at direct Series/*.mkv children), then
 // removes whatever subdirectories are left empty afterward. A name
-// collision with a file already at the top level is skipped, not
-// overwritten, and reported in the returned error.
+// collision with a file already at the top level that's the same size is
+// treated as the same episode having arrived twice (e.g. a torrent whose
+// content wraps a single file in a folder that happens to share the
+// series' name — see buildRsyncArgs) and the redundant nested copy is
+// just removed; one that's a different size is a genuine conflict, so
+// it's left in place untouched and reported in the returned error instead
+// of guessing which copy is "right".
 func FlattenDir(dir string) error {
 	var moveErrs []string
 
@@ -150,8 +166,15 @@ func FlattenDir(dir string) error {
 		}
 
 		dest := filepath.Join(dir, filepath.Base(path))
-		if _, err := os.Stat(dest); err == nil {
-			moveErrs = append(moveErrs, fmt.Sprintf("%s: a file named %q already exists at the top level", path, filepath.Base(path)))
+		if destInfo, err := os.Stat(dest); err == nil {
+			srcInfo, srcErr := os.Stat(path)
+			if srcErr == nil && srcInfo.Size() == destInfo.Size() {
+				if rmErr := os.Remove(path); rmErr != nil {
+					moveErrs = append(moveErrs, fmt.Sprintf("%s: duplicate of %s (same size), but couldn't remove it: %v", path, dest, rmErr))
+				}
+				return nil
+			}
+			moveErrs = append(moveErrs, fmt.Sprintf("%s: a different file named %q already exists at the top level", path, filepath.Base(path)))
 			return nil
 		}
 		if err := os.Rename(path, dest); err != nil {

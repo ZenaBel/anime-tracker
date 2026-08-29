@@ -26,6 +26,24 @@ func TestBuildRsyncArgs(t *testing.T) {
 	}
 }
 
+// Regression test for a real repro: a torrent's content_path was itself a
+// folder sharing the series' own name (e.g. "Futsutsuka na Akujo dewa
+// Gozaimasu ga - AniLiberty [WEB-DL 1080p HEVC]" both as the series folder
+// and as content_path's own last segment) — without the trailing slash,
+// rsync nests that whole folder inside itself locally instead of merging
+// its contents in.
+func TestBuildRsyncArgs_SameNameFolderGetsTrailingSlash(t *testing.T) {
+	got := buildRsyncArgs(
+		"user@seedbox",
+		"/downloads/Futsutsuka na Akujo dewa Gozaimasu ga - AniLiberty [WEB-DL 1080p HEVC]/Futsutsuka na Akujo dewa Gozaimasu ga - AniLiberty [WEB-DL 1080p HEVC]",
+		"/lib/Futsutsuka na Akujo dewa Gozaimasu ga - AniLiberty [WEB-DL 1080p HEVC]",
+	)
+	wantSrc := "user@seedbox:/downloads/Futsutsuka na Akujo dewa Gozaimasu ga - AniLiberty [WEB-DL 1080p HEVC]/Futsutsuka na Akujo dewa Gozaimasu ga - AniLiberty [WEB-DL 1080p HEVC]/"
+	if got[len(got)-2] != wantSrc {
+		t.Fatalf("buildRsyncArgs() source = %q, want %q (trailing slash so rsync merges contents instead of nesting)", got[len(got)-2], wantSrc)
+	}
+}
+
 func TestParseRsyncProgress(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -177,10 +195,15 @@ func TestStreamRsyncProgress_Throttling(t *testing.T) {
 
 func writeFile(t *testing.T, path string) {
 	t.Helper()
+	writeFileContent(t, path, "data")
+}
+
+func writeFileContent(t *testing.T, path, content string) {
+	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte("data"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -236,19 +259,43 @@ func TestFlattenDir_AlreadyFlat(t *testing.T) {
 	}
 }
 
-func TestFlattenDir_NameCollisionReported(t *testing.T) {
+func TestFlattenDir_DifferentSizeCollisionReported(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "01.mkv"))
-	writeFile(t, filepath.Join(dir, "batch", "01.mkv"))
+	writeFileContent(t, filepath.Join(dir, "01.mkv"), "the real episode, much bigger")
+	writeFileContent(t, filepath.Join(dir, "batch", "01.mkv"), "diff")
 
 	err := FlattenDir(dir)
 	if err == nil {
 		t.Fatal("expected an error reporting the collision")
 	}
-	// The original top-level file must be untouched, and the nested one
-	// left in place rather than silently dropped.
+	// A genuine size mismatch: neither copy is touched — never guess which
+	// one is "right".
 	if _, err := os.Stat(filepath.Join(dir, "batch", "01.mkv")); err != nil {
 		t.Fatalf("colliding nested file should be left in place: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "01.mkv")); err != nil {
+		t.Fatalf("original top-level file should be left in place: %v", err)
+	}
+}
+
+// Regression test: a torrent re-delivering an episode that already exists
+// locally (e.g. via buildRsyncArgs's same-name-folder case, or any other
+// path that lands a duplicate) must not get FlattenDir permanently stuck
+// reporting the exact same collision forever — a same-size collision is
+// treated as a harmless duplicate and cleaned up instead.
+func TestFlattenDir_SameSizeDuplicateRemoved(t *testing.T) {
+	dir := t.TempDir()
+	writeFileContent(t, filepath.Join(dir, "01.mkv"), "identical content!!")
+	writeFileContent(t, filepath.Join(dir, "Series Name", "01.mkv"), "identical content!!")
+
+	if err := FlattenDir(dir); err != nil {
+		t.Fatalf("FlattenDir() error = %v, want nil (same-size duplicate should be silently cleaned up)", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "01.mkv")); err != nil {
+		t.Fatalf("original top-level file should survive: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "Series Name")); !os.IsNotExist(err) {
+		t.Fatalf("nested duplicate and its now-empty folder should be gone")
 	}
 }
 

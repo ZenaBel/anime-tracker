@@ -226,14 +226,22 @@ torrent, and for each one that's finished (`progress >= 1.0`, regardless of
 whether it got there via `download` or an RSS rule): rsyncs it from the
 remote host into the matching local series folder, flattens away any
 nested batch-release folder qBittorrent may have kept (the scanner only
-looks at direct `Series/*.mkv` files), then removes the `anime-tracker` tag
-so it isn't pulled again — the torrent itself is left alone, still seeding.
-Finishes with a normal library scan. A torrent still mid-download is left
-untouched and picked up on a later run; one whose transfer fails keeps its
-tag and is retried next time too. `--dry-run` lists what's finished without
-touching the network or filesystem. `S` in the TUI runs the same thing
-(no `--dry-run` there) and refreshes the series/episode panes right away if
-anything came in.
+looks at direct `Series/*.mkv` files — a nested folder that happens to
+share the series' own name, which some releases/qBittorrent produce even
+for a single episode, is specifically handled so it doesn't get nested
+inside itself locally), then removes the `anime-tracker` tag so it isn't
+pulled again — the torrent itself is left alone, still seeding. Finishes
+with a normal library scan. A torrent still mid-download is left untouched
+and picked up on a later run; one whose transfer fails keeps its tag and
+is retried next time too — including one stuck on a flattening conflict:
+if the conflicting file turns out to be the exact same size (almost always
+the same episode having arrived twice), the redundant copy is just
+removed on the next attempt rather than failing forever; a genuinely
+different file at that path is left as a real conflict for you to sort
+out by hand. `--dry-run` lists what's finished without touching the
+network or filesystem. `S` in the TUI runs the same thing (no `--dry-run`
+there) and refreshes the series/episode panes right away if anything came
+in.
 
 **Which local folder a synced torrent lands in** normally comes from its
 save path's last segment — the `<remote.root>/<Series>` convention
