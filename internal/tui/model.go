@@ -52,6 +52,13 @@ type Model struct {
 	pendingEpisodeID int64
 
 	manage manageState
+
+	settingsActive  bool
+	settingsLoading bool
+	settingsValues  map[string]string
+	settingsIdx     int
+	settingsEditing bool
+	settingsInput   string
 }
 
 // manageKind identifies which rename/delete overlay (if any) is active.
@@ -157,6 +164,25 @@ func loadSearchDataCmd(store *db.Store) tea.Cmd {
 	return func() tea.Msg {
 		eps, err := store.ListAllEpisodes(context.Background())
 		return searchDataLoadedMsg{episodes: eps, err: err}
+	}
+}
+
+func loadSettingsCmd(store *db.Store) tea.Cmd {
+	return func() tea.Msg {
+		values, err := store.AllSettings(context.Background())
+		return settingsLoadedMsg{values: values, err: err}
+	}
+}
+
+func saveSettingCmd(store *db.Store, key, value string) tea.Cmd {
+	return func() tea.Msg {
+		return settingsSavedMsg{err: store.SetSetting(context.Background(), key, value)}
+	}
+}
+
+func unsetSettingCmd(store *db.Store, key string) tea.Cmd {
+	return func() tea.Msg {
+		return settingsSavedMsg{err: store.UnsetSetting(context.Background(), key)}
 	}
 }
 

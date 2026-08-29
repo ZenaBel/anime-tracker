@@ -8,6 +8,7 @@ import (
 
 	"anime-tracker/internal/db"
 	"anime-tracker/internal/search"
+	"anime-tracker/internal/settings"
 )
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -22,6 +23,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.manage.kind != manageNone {
 			return m.handleManageKey(msg)
+		}
+		if m.settingsActive {
+			return m.handleSettingsKey(msg)
 		}
 		return m.handleKey(msg)
 
@@ -167,6 +171,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = nil
 		m.statusMsg = "done"
 		return m, loadSeriesCmd(m.store, m.sortMode)
+
+	case settingsLoadedMsg:
+		m.settingsLoading = false
+		if msg.err != nil {
+			m.err = msg.err
+			return m, nil
+		}
+		m.err = nil
+		m.settingsValues = msg.values
+		return m, nil
+
+	case settingsSavedMsg:
+		if msg.err != nil {
+			m.err = msg.err
+			return m, nil
+		}
+		m.err = nil
+		return m, loadSettingsCmd(m.store)
 	}
 
 	return m, nil
@@ -193,6 +215,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.searchIdx = 0
 		m.searchLoading = true
 		return m.withSearchResults(), loadSearchDataCmd(m.store)
+
+	case "c":
+		m.settingsActive = true
+		m.settingsLoading = true
+		m.settingsEditing = false
+		m.settingsIdx = 0
+		return m, loadSettingsCmd(m.store)
 
 	case "p":
 		if len(m.episodes) == 0 {
@@ -397,6 +426,75 @@ func (m Model) handleDeleteConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.statusMsg = "deleting..."
 			return m, deleteEpisodeCmd(m.store, ep)
 		}
+	}
+	return m, nil
+}
+
+// handleSettingsKey routes to the edit-mode handler when a field is
+// currently being edited, otherwise handles browsing the settings list.
+func (m Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.settingsEditing {
+		return m.handleSettingsEditKey(msg)
+	}
+
+	switch msg.String() {
+	case "esc":
+		m.settingsActive = false
+		return m, nil
+
+	case "up", "k":
+		m.settingsIdx = clamp(m.settingsIdx-1, 0, len(settings.Keys)-1)
+		return m, nil
+
+	case "down", "j":
+		m.settingsIdx = clamp(m.settingsIdx+1, 0, len(settings.Keys)-1)
+		return m, nil
+
+	case "enter":
+		key := settings.Keys[m.settingsIdx]
+		m.settingsEditing = true
+		if key == settings.PasswordKey {
+			m.settingsInput = "" // never pre-fill/display a stored password
+		} else {
+			m.settingsInput = m.settingsValues[key]
+		}
+		return m, nil
+
+	case "x":
+		key := settings.Keys[m.settingsIdx]
+		return m, unsetSettingCmd(m.store, key)
+	}
+	return m, nil
+}
+
+func (m Model) handleSettingsEditKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEsc:
+		m.settingsEditing = false
+		return m, nil
+
+	case tea.KeyEnter:
+		key := settings.Keys[m.settingsIdx]
+		value := strings.TrimSpace(m.settingsInput)
+		m.settingsEditing = false
+		if value == "" {
+			return m, nil // no-op; 'x' clears a value instead
+		}
+		return m, saveSettingCmd(m.store, key, value)
+
+	case tea.KeyBackspace:
+		if r := []rune(m.settingsInput); len(r) > 0 {
+			m.settingsInput = string(r[:len(r)-1])
+		}
+		return m, nil
+
+	case tea.KeyRunes:
+		m.settingsInput += string(msg.Runes)
+		return m, nil
+
+	case tea.KeySpace:
+		m.settingsInput += " "
+		return m, nil
 	}
 	return m, nil
 }

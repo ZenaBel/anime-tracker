@@ -60,7 +60,8 @@ episode list) · `space` toggles an episode between watched/new · `p` plays
 the rest of the selected series as one playlist · `R` renames the selected
 series/episode (on disk too) · `D` deletes it (on disk too, after a
 confirmation prompt) · `r` rescans the library · `s` cycles sort order
-(az → za → added → watched) · `/` opens search · `q` quits.
+(az → za → added → watched) · `/` opens search · `c` opens the settings
+overlay (qBittorrent/SSH config — see below) · `q` quits.
 
 ### Renaming / deleting
 
@@ -150,6 +151,11 @@ anime-tracker config set remote.ssh_target <user>@seedbox.example.com   # or an 
 anime-tracker config set remote.root /path/on/the/remote/disk           # mirrors the local library root, one folder per series
 anime-tracker config set qbt.insecure_tls true   # only if the WebUI uses a self-signed cert
 ```
+
+Or do the same from the TUI: `c` opens a settings overlay listing all six
+keys, `enter` edits the selected one inline (`qbt.password`'s input is
+masked as you type and never pre-filled), `x` clears one, `esc` closes it.
+Same underlying storage either way.
 
 These are stored in anime-tracker's own SQLite db (in plaintext, same
 posture as `ANIME_TRACKER_PLAYER` in `.bashrc` — this is a personal,

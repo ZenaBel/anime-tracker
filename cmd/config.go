@@ -4,24 +4,13 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"sort"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
 	"anime-tracker/internal/db"
+	"anime-tracker/internal/settings"
 )
-
-// settingsKeys are the only keys `config` accepts, so a typo fails loudly
-// instead of silently storing an unused setting.
-var settingsKeys = map[string]bool{
-	"qbt.url":           true,
-	"qbt.username":      true,
-	"qbt.password":      true,
-	"qbt.insecure_tls":  true,
-	"remote.ssh_target": true,
-	"remote.root":       true,
-}
 
 var configCmd = &cobra.Command{
 	Use:   "config",
@@ -34,14 +23,14 @@ var configSetCmd = &cobra.Command{
 	Args:  cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		key := args[0]
-		if !settingsKeys[key] {
+		if !settings.Valid(key) {
 			return fmt.Errorf("unknown config key %q (see `config set --help`)", key)
 		}
 
 		var value string
 		if len(args) == 2 {
 			value = args[1]
-		} else if key == "qbt.password" {
+		} else if key == settings.PasswordKey {
 			fmt.Print("qbt.password: ")
 			b, err := term.ReadPassword(int(os.Stdin.Fd()))
 			fmt.Println()
@@ -73,7 +62,7 @@ var configUnsetCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		key := args[0]
-		if !settingsKeys[key] {
+		if !settings.Valid(key) {
 			return fmt.Errorf("unknown config key %q", key)
 		}
 
@@ -107,18 +96,12 @@ var configShowCmd = &cobra.Command{
 			return err
 		}
 
-		keys := make([]string, 0, len(settingsKeys))
-		for k := range settingsKeys {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-
-		for _, k := range keys {
+		for _, k := range settings.Keys {
 			v, ok := all[k]
 			switch {
 			case !ok:
 				fmt.Printf("%-18s (not set)\n", k)
-			case k == "qbt.password":
+			case k == settings.PasswordKey:
 				fmt.Printf("%-18s ********\n", k)
 			default:
 				fmt.Printf("%-18s %s\n", k, v)

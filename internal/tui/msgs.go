@@ -78,3 +78,16 @@ type searchDataLoadedMsg struct {
 type manageDoneMsg struct {
 	err error
 }
+
+// settingsLoadedMsg carries every stored qBittorrent/SSH setting, fetched
+// on opening the settings overlay and again after each edit.
+type settingsLoadedMsg struct {
+	values map[string]string
+	err    error
+}
+
+// settingsSavedMsg reports the result of a set/unset from the settings
+// overlay.
+type settingsSavedMsg struct {
+	err error
+}

@@ -9,6 +9,7 @@ import (
 	"anime-tracker/internal/db"
 	"anime-tracker/internal/scanner"
 	"anime-tracker/internal/search"
+	"anime-tracker/internal/settings"
 	"anime-tracker/internal/statusicon"
 )
 
@@ -87,13 +88,16 @@ func (m Model) View() string {
 	if m.manage.kind != manageNone {
 		return m.viewManage()
 	}
+	if m.settingsActive {
+		return m.viewSettings()
+	}
 
 	left := m.viewSeriesPane()
 	right := m.viewEpisodesPane()
 	body := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 
 	var footer strings.Builder
-	footer.WriteString(helpStyle.Render("↑/↓ or j/k: move  ←/→ or h/l: switch pane  enter: open/focus  space: toggle watched  p: playlist  R: rename  D: delete  r: rescan  s: sort (" + m.sortMode.String() + ")  /: search  q: quit"))
+	footer.WriteString(helpStyle.Render("↑/↓ or j/k: move  ←/→ or h/l: switch pane  enter: open/focus  space: toggle watched  p: playlist  R: rename  D: delete  r: rescan  s: sort (" + m.sortMode.String() + ")  /: search  c: settings  q: quit"))
 	if m.err != nil {
 		footer.WriteString("\n")
 		footer.WriteString(errStyle.Render("error: " + m.err.Error()))
@@ -278,6 +282,56 @@ func (m Model) viewManage() string {
 		b.WriteString("\n\n")
 		b.WriteString(helpStyle.Render("y / enter: confirm  ·  any other key: cancel"))
 	}
+
+	return searchPaneStyle.Render(b.String())
+}
+
+func (m Model) viewSettings() string {
+	var b strings.Builder
+
+	if m.settingsEditing {
+		key := settings.Keys[m.settingsIdx]
+		b.WriteString(focusedTitle.Render("Settings — editing " + key))
+		b.WriteString("\n\n")
+		display := m.settingsInput
+		if key == settings.PasswordKey {
+			display = strings.Repeat("•", len([]rune(m.settingsInput)))
+		}
+		b.WriteString("> " + display + "▌\n\n")
+		b.WriteString(helpStyle.Render("enter: save  esc: cancel"))
+		return searchPaneStyle.Render(b.String())
+	}
+
+	b.WriteString(focusedTitle.Render("Settings"))
+	b.WriteString("\n\n")
+	if m.settingsLoading {
+		b.WriteString(dimTitle.Render("loading..."))
+		b.WriteString("\n")
+	}
+
+	for i, key := range settings.Keys {
+		value, ok := m.settingsValues[key]
+		var display string
+		switch {
+		case !ok || value == "":
+			display = dimTitle.Render("(not set)")
+		case key == settings.PasswordKey:
+			display = "********"
+		default:
+			display = value
+		}
+		line := fmt.Sprintf("%-20s %s", key, display)
+		if i == m.settingsIdx {
+			line = selectedStyle.Render("> " + line)
+		} else {
+			line = "  " + line
+		}
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+
+	b.WriteString("\n")
+	b.WriteString(helpStyle.Render("enter: edit  x: clear  esc: close"))
 
 	return searchPaneStyle.Render(b.String())
 }
