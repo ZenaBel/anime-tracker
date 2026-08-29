@@ -412,7 +412,15 @@ func (m Model) viewRSSFeedsPane() string {
 	if len(m.rss.feeds) == 0 && !m.rss.loading {
 		b.WriteString(dimTitle.Render("(no feeds)"))
 	}
-	for i, f := range m.rss.feeds {
+
+	maxVisible := m.visibleRows()
+	start, end := visibleWindow(len(m.rss.feeds), m.rss.feedIdx, maxVisible)
+	if start > 0 {
+		b.WriteString(dimTitle.Render(fmt.Sprintf("  ↑ %d more", start)))
+		b.WriteString("\n")
+	}
+	for i := start; i < end; i++ {
+		f := m.rss.feeds[i]
 		line := fmt.Sprintf("%-20s (%d)", truncate(f.Name, 20), f.Unread)
 		if i == m.rss.feedIdx {
 			line = selectedStyle.Render("> " + line)
@@ -420,6 +428,10 @@ func (m Model) viewRSSFeedsPane() string {
 			line = "  " + line
 		}
 		b.WriteString(line)
+		b.WriteString("\n")
+	}
+	if end < len(m.rss.feeds) {
+		b.WriteString(dimTitle.Render(fmt.Sprintf("  ↓ %d more", len(m.rss.feeds)-end)))
 		b.WriteString("\n")
 	}
 
@@ -451,17 +463,15 @@ func (m Model) viewRSSArticlesPane() string {
 	}
 	for i := start; i < end; i++ {
 		a := articles[i]
-		read := ""
-		if a.IsRead {
-			read = " (read)"
+		title := truncate(a.Title, rightPaneWidth-4)
+		switch {
+		case i == m.rss.articleIdx:
+			b.WriteString(selectedStyle.Render("> " + title))
+		case a.IsRead:
+			b.WriteString(dimTitle.Render("  " + title))
+		default:
+			b.WriteString("  " + title)
 		}
-		line := truncate(a.Title, rightPaneWidth-8) + read
-		if i == m.rss.articleIdx {
-			line = selectedStyle.Render("> " + line)
-		} else {
-			line = "  " + line
-		}
-		b.WriteString(line)
 		b.WriteString("\n")
 	}
 	if end < len(articles) {
