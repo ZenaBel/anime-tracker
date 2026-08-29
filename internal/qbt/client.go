@@ -60,17 +60,32 @@ func New(baseURL string, insecureSkipVerify bool) (*Client, error) {
 }
 
 // Login authenticates and stores the resulting session cookie for
-// subsequent calls.
+// subsequent calls. Success is judged primarily by whether a session
+// cookie actually landed in the jar, not by status code or body text —
+// qBittorrent's WebUI has answered a successful login differently across
+// versions/configs seen in the wild (200 with body "Ok.", or 204 with an
+// empty body); the cookie is the one thing that's actually meant to be
+// there either way. The status/body check is only a fallback for the
+// unlikely case the cookie didn't get set for some other reason.
 func (c *Client) Login(ctx context.Context, username, password string) error {
 	form := url.Values{"username": {username}, "password": {password}}
 	body, status, err := c.post(ctx, "/api/v2/auth/login", form)
 	if err != nil {
 		return fmt.Errorf("logging in: %w", err)
 	}
-	if status != http.StatusOK || strings.TrimSpace(body) != "Ok." {
-		return fmt.Errorf("login rejected (check qbt.url/qbt.username/qbt.password): %s", strings.TrimSpace(body))
+
+	if u, uErr := url.Parse(c.baseURL); uErr == nil && c.httpClient.Jar != nil {
+		for _, ck := range c.httpClient.Jar.Cookies(u) {
+			if strings.Contains(ck.Name, "SID") {
+				return nil
+			}
+		}
 	}
-	return nil
+
+	if status >= 200 && status < 300 && strings.TrimSpace(body) != "Fails." {
+		return nil
+	}
+	return fmt.Errorf("login rejected (check qbt.url/qbt.username/qbt.password): status %d: %s", status, strings.TrimSpace(body))
 }
 
 // AddTorrent submits a magnet link or direct .torrent URL for download,

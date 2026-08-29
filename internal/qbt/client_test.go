@@ -55,6 +55,41 @@ func TestLogin_Rejected(t *testing.T) {
 	}
 }
 
+// Some qBittorrent WebUI versions/configs answer a successful login with
+// 204 No Content and no body at all (rather than the documented 200 with
+// body "Ok."), signaling success only via the session cookie — this is a
+// regression test for a real login that failed against exactly this shape.
+func TestLogin_204NoContentWithCookieOnly(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.SetCookie(w, &http.Cookie{Name: "QBT_SID_8083", Value: "abc123"})
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	c, err := New(srv.URL, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Login(context.Background(), "admin", "password"); err != nil {
+		t.Fatalf("Login() error = %v, want success (cookie was set despite 204/empty body)", err)
+	}
+}
+
+func TestLogin_401Unauthorized(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	c, err := New(srv.URL, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Login(context.Background(), "alice", "wrong"); err == nil {
+		t.Fatal("expected error on 401 with no session cookie")
+	}
+}
+
 func TestAddTorrent(t *testing.T) {
 	var gotURL, gotSavePath, gotTags string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
