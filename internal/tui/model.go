@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"anime-tracker/internal/db"
+	"anime-tracker/internal/library"
 	"anime-tracker/internal/player"
 	"anime-tracker/internal/scanner"
 	"anime-tracker/internal/search"
@@ -49,6 +50,27 @@ type Model struct {
 	// selected once its series' episode list finishes loading; consumed
 	// (and cleared) by the next episodesLoadedMsg.
 	pendingEpisodeID int64
+
+	manage manageState
+}
+
+// manageKind identifies which rename/delete overlay (if any) is active.
+type manageKind int
+
+const (
+	manageNone manageKind = iota
+	manageRenameSeries
+	manageRenameEpisode
+	manageDeleteSeries
+	manageDeleteEpisode
+)
+
+// manageState holds the rename/delete overlay's state; it's active
+// whenever kind != manageNone. input is the editable new-name buffer for a
+// rename; delete confirmations don't use it.
+type manageState struct {
+	kind  manageKind
+	input string
 }
 
 func NewModel(store *db.Store, rootDir string) Model {
@@ -197,6 +219,30 @@ func updateProgressCmd(store *db.Store, episodeID int64, positionSecs, durationS
 			return actionDoneMsg{}
 		}
 		return actionDoneMsg{err: store.SetPlaybackProgress(context.Background(), episodeID, positionSecs, durationSecs)}
+	}
+}
+
+func renameSeriesCmd(store *db.Store, s db.SeriesProgress, newTitle string) tea.Cmd {
+	return func() tea.Msg {
+		return manageDoneMsg{err: library.RenameSeries(context.Background(), store, s, newTitle)}
+	}
+}
+
+func deleteSeriesCmd(store *db.Store, s db.SeriesProgress) tea.Cmd {
+	return func() tea.Msg {
+		return manageDoneMsg{err: library.DeleteSeries(context.Background(), store, s)}
+	}
+}
+
+func renameEpisodeCmd(store *db.Store, ep db.Episode, newFileName string) tea.Cmd {
+	return func() tea.Msg {
+		return manageDoneMsg{err: library.RenameEpisode(context.Background(), store, ep, newFileName)}
+	}
+}
+
+func deleteEpisodeCmd(store *db.Store, ep db.Episode) tea.Cmd {
+	return func() tea.Msg {
+		return manageDoneMsg{err: library.DeleteEpisode(context.Background(), store, ep)}
 	}
 }
 

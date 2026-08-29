@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -18,6 +19,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		if m.searchActive {
 			return m.handleSearchKey(msg)
+		}
+		if m.manage.kind != manageNone {
+			return m.handleManageKey(msg)
 		}
 		return m.handleKey(msg)
 
@@ -153,6 +157,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = nil
 		m.searchAllEpisodes = msg.episodes
 		return m.withSearchResults(), nil
+
+	case manageDoneMsg:
+		if msg.err != nil {
+			m.err = msg.err
+			m.statusMsg = ""
+			return m, nil
+		}
+		m.err = nil
+		m.statusMsg = "done"
+		return m, loadSeriesCmd(m.store, m.sortMode)
 	}
 
 	return m, nil
@@ -187,6 +201,30 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		queue := append([]db.Episode(nil), m.episodes[db.FirstUnwatchedIndex(m.episodes):]...)
 		m.statusMsg = "launching playlist..."
 		return m, playlistOpenCmd(queue)
+
+	case "R":
+		if m.focus == focusSeries {
+			if s, ok := m.selectedSeries(); ok {
+				m.manage = manageState{kind: manageRenameSeries, input: s.Title}
+			}
+			return m, nil
+		}
+		if ep, ok := m.selectedEpisode(); ok {
+			m.manage = manageState{kind: manageRenameEpisode, input: ep.FileName}
+		}
+		return m, nil
+
+	case "D":
+		if m.focus == focusSeries {
+			if _, ok := m.selectedSeries(); ok {
+				m.manage = manageState{kind: manageDeleteSeries}
+			}
+			return m, nil
+		}
+		if _, ok := m.selectedEpisode(); ok {
+			m.manage = manageState{kind: manageDeleteEpisode}
+		}
+		return m, nil
 
 	case "up", "k":
 		return m.moveSelection(-1)
@@ -276,6 +314,90 @@ func (m Model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.withSearchResults(), nil
 	}
 
+	return m, nil
+}
+
+// handleManageKey routes to the rename or delete-confirm handler depending
+// on which overlay is active.
+func (m Model) handleManageKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch m.manage.kind {
+	case manageRenameSeries, manageRenameEpisode:
+		return m.handleRenameKey(msg)
+	case manageDeleteSeries, manageDeleteEpisode:
+		return m.handleDeleteConfirmKey(msg)
+	}
+	return m, nil
+}
+
+func (m Model) handleRenameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEsc:
+		m.manage = manageState{}
+		return m, nil
+
+	case tea.KeyEnter:
+		kind := m.manage.kind
+		input := strings.TrimSpace(m.manage.input)
+		m.manage = manageState{}
+		if input == "" {
+			return m, nil
+		}
+		switch kind {
+		case manageRenameSeries:
+			s, ok := m.selectedSeries()
+			if !ok || input == s.Title {
+				return m, nil
+			}
+			m.statusMsg = "renaming..."
+			return m, renameSeriesCmd(m.store, s, input)
+		case manageRenameEpisode:
+			ep, ok := m.selectedEpisode()
+			if !ok || input == ep.FileName {
+				return m, nil
+			}
+			m.statusMsg = "renaming..."
+			return m, renameEpisodeCmd(m.store, ep, input)
+		}
+		return m, nil
+
+	case tea.KeyBackspace:
+		if r := []rune(m.manage.input); len(r) > 0 {
+			m.manage.input = string(r[:len(r)-1])
+		}
+		return m, nil
+
+	case tea.KeyRunes:
+		m.manage.input += string(msg.Runes)
+		return m, nil
+
+	case tea.KeySpace:
+		m.manage.input += " "
+		return m, nil
+	}
+	return m, nil
+}
+
+// handleDeleteConfirmKey requires an explicit "y"/"Y"/enter to proceed;
+// every other key (including esc) cancels.
+func (m Model) handleDeleteConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	confirmed := msg.Type == tea.KeyEnter || msg.String() == "y" || msg.String() == "Y"
+	kind := m.manage.kind
+	m.manage = manageState{}
+	if !confirmed {
+		return m, nil
+	}
+	switch kind {
+	case manageDeleteSeries:
+		if s, ok := m.selectedSeries(); ok {
+			m.statusMsg = "deleting..."
+			return m, deleteSeriesCmd(m.store, s)
+		}
+	case manageDeleteEpisode:
+		if ep, ok := m.selectedEpisode(); ok {
+			m.statusMsg = "deleting..."
+			return m, deleteEpisodeCmd(m.store, ep)
+		}
+	}
 	return m, nil
 }
 

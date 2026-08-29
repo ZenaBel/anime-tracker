@@ -72,3 +72,9 @@ type searchDataLoadedMsg struct {
 	episodes []db.Episode
 	err      error
 }
+
+// manageDoneMsg reports the result of a rename/delete action initiated
+// from the manage overlay (see model.go's manageState).
+type manageDoneMsg struct {
+	err error
+}

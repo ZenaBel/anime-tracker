@@ -34,7 +34,14 @@ anime-tracker play <query>               # fuzzy-find an episode, open it in the
 anime-tracker playlist <series-query>    # play all remaining episodes of a series as one mpv playlist
 anime-tracker watch <query>              # manually mark an episode watched
 anime-tracker unwatch <query>            # undo a watched mark
+anime-tracker rename-series <query> <new-title>    # rename a series' folder + tracked title
+anime-tracker delete-series <query>                # permanently delete a series' folder + all its files
+anime-tracker rename-episode <query> <new-name>    # rename an episode's file (keeps its extension)
+anime-tracker delete-episode <query>               # permanently delete one episode's file
 ```
+
+The four `rename-*`/`delete-*` commands prompt for confirmation (`[y/N]`)
+before touching anything; pass `-y`/`--yes` to skip it (e.g. for scripting).
 
 Global flags: `--dir` (library root, default: `$ANIME_TRACKER_DIR` or the
 current directory), `--db` (sqlite file path, default: `$ANIME_TRACKER_DB`
@@ -45,9 +52,24 @@ or `~/.config/anime-tracker/anime.db`).
 `↑/↓` or `j/k` move within the focused pane · `←/→` or `h/l` switch panes ·
 `enter` opens the selected episode in the player (series pane: focuses the
 episode list) · `space` toggles an episode between watched/new · `p` plays
-the rest of the selected series as one playlist · `r` rescans the library ·
-`s` cycles sort order (az → za → added → watched) · `/` opens search ·
-`q` quits.
+the rest of the selected series as one playlist · `R` renames the selected
+series/episode (on disk too) · `D` deletes it (on disk too, after a
+confirmation prompt) · `r` rescans the library · `s` cycles sort order
+(az → za → added → watched) · `/` opens search · `q` quits.
+
+### Renaming / deleting
+
+`R` on a series or episode opens an inline rename prompt pre-filled with its
+current name; `enter` confirms, `esc` cancels. `D` opens a confirmation
+prompt ("permanently delete ... ? this cannot be undone") — only `y` or
+`enter` proceeds, any other key cancels. Both act on the real file: renaming
+a series renames its folder (and every episode's tracked path along with
+it); renaming an episode renames its file and must keep its original
+extension, since only files with it are picked up on rescan. Deleting either
+one deletes the real file(s) from disk, not just the tracked entry — there's
+no undo. The same four actions exist as CLI commands (`rename-series`,
+`delete-series`, `rename-episode`, `delete-episode`), each with its own
+`[y/N]` prompt (skip it with `-y`).
 
 ### Search
 

@@ -8,7 +8,6 @@ import (
 
 	"anime-tracker/internal/db"
 	"anime-tracker/internal/player"
-	"anime-tracker/internal/search"
 )
 
 var playlistCmd = &cobra.Command{
@@ -23,13 +22,9 @@ var playlistCmd = &cobra.Command{
 		defer closeStore()
 
 		ctx := cmd.Context()
-		allSeries, err := store.ListSeriesWithProgress(ctx, db.SortAlphaAsc)
+		series, err := findSeriesByQuery(ctx, store, args[0])
 		if err != nil {
 			return err
-		}
-		series, ok := search.FindSeries(allSeries, args[0])
-		if !ok {
-			return fmt.Errorf("no series matching %q", args[0])
 		}
 
 		episodes, err := store.ListEpisodesBySeries(ctx, series.ID)

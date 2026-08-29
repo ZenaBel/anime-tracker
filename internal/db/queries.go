@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"time"
 )
 
@@ -344,6 +345,90 @@ func (s *Store) SetPlaybackProgress(ctx context.Context, episodeID int64, positi
 		posArg, durArg, episodeID)
 	if err != nil {
 		return fmt.Errorf("setting playback progress: %w", err)
+	}
+	return nil
+}
+
+// RenameSeries updates a series' title and dir_path, and rewrites every one
+// of its episodes' file_path to sit under the new directory (file names are
+// left as-is; only the directory prefix moves). Call this only after the
+// directory itself has already been renamed on disk — this just brings the
+// database in line with that.
+func (s *Store) RenameSeries(ctx context.Context, seriesID int64, newTitle, oldDirPath, newDirPath string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("beginning tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `UPDATE series SET title = ?, dir_path = ? WHERE id = ?`, newTitle, newDirPath, seriesID); err != nil {
+		return fmt.Errorf("renaming series: %w", err)
+	}
+
+	rows, err := tx.QueryContext(ctx, `SELECT id, file_path FROM episodes WHERE series_id = ?`, seriesID)
+	if err != nil {
+		return fmt.Errorf("querying episodes: %w", err)
+	}
+	type idPath struct {
+		id   int64
+		path string
+	}
+	var eps []idPath
+	for rows.Next() {
+		var ip idPath
+		if err := rows.Scan(&ip.id, &ip.path); err != nil {
+			rows.Close()
+			return fmt.Errorf("scanning episode: %w", err)
+		}
+		eps = append(eps, ip)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("iterating episodes: %w", err)
+	}
+	rows.Close()
+
+	for _, ep := range eps {
+		rel, err := filepath.Rel(oldDirPath, ep.path)
+		if err != nil {
+			return fmt.Errorf("computing relative path for %q: %w", ep.path, err)
+		}
+		newPath := filepath.Join(newDirPath, rel)
+		if _, err := tx.ExecContext(ctx, `UPDATE episodes SET file_path = ? WHERE id = ?`, newPath, ep.id); err != nil {
+			return fmt.Errorf("updating episode path: %w", err)
+		}
+	}
+
+	return tx.Commit()
+}
+
+// DeleteSeries removes a series from the database; its episodes go with it
+// via the FK cascade. Call this only after the directory has already been
+// deleted from disk.
+func (s *Store) DeleteSeries(ctx context.Context, seriesID int64) error {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM series WHERE id = ?`, seriesID); err != nil {
+		return fmt.Errorf("deleting series: %w", err)
+	}
+	return nil
+}
+
+// RenameEpisode updates one episode's file_name/file_path/episode_number.
+// Call this only after the file has already been renamed on disk.
+func (s *Store) RenameEpisode(ctx context.Context, episodeID int64, newFileName, newFilePath string, epNum *int) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE episodes SET file_name = ?, file_path = ?, episode_number = ? WHERE id = ?`,
+		newFileName, newFilePath, epNum, episodeID)
+	if err != nil {
+		return fmt.Errorf("renaming episode: %w", err)
+	}
+	return nil
+}
+
+// DeleteEpisode removes one episode from the database. Call this only after
+// the file has already been deleted from disk.
+func (s *Store) DeleteEpisode(ctx context.Context, episodeID int64) error {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM episodes WHERE id = ?`, episodeID); err != nil {
+		return fmt.Errorf("deleting episode: %w", err)
 	}
 	return nil
 }

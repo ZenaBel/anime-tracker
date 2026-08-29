@@ -50,6 +50,10 @@ func init() {
 	rootCmd.AddCommand(playlistCmd)
 	rootCmd.AddCommand(watchCmd)
 	rootCmd.AddCommand(unwatchCmd)
+	rootCmd.AddCommand(renameSeriesCmd)
+	rootCmd.AddCommand(deleteSeriesCmd)
+	rootCmd.AddCommand(renameEpisodeCmd)
+	rootCmd.AddCommand(deleteEpisodeCmd)
 	rootCmd.AddCommand(tuiCmd)
 }
 
