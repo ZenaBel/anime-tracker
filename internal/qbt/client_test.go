@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLogin(t *testing.T) {
@@ -295,6 +296,42 @@ func TestListRSSArticles(t *testing.T) {
 	}
 	if read := byID["a2"]; !read.IsRead {
 		t.Fatalf("article a2 should be marked read: %+v", read)
+	}
+}
+
+// Regression test: real qBittorrent RSS article dates look like
+// "29 Aug 2026 16:02:58 +0000" — no weekday, 4-digit year — which none of
+// Go's stdlib RFC822/1123 constants match. Confirmed against a real
+// instance; previously every article silently failed to parse, so sorting
+// fell back to whatever arbitrary order the API happened to return.
+func TestParseRSSDate_RealQBittorrentFormat(t *testing.T) {
+	got, ok := parseRSSDate("29 Aug 2026 16:02:58 +0000")
+	if !ok {
+		t.Fatal("expected the real qBittorrent RSS date format to parse")
+	}
+	want := time.Date(2026, time.August, 29, 16, 2, 58, 0, time.UTC)
+	if !got.Equal(want) {
+		t.Fatalf("parseRSSDate() = %v, want %v", got, want)
+	}
+}
+
+func TestSortArticlesNewestFirst_RealQBittorrentFormat(t *testing.T) {
+	articles := []RSSArticle{
+		{ID: "old", Date: "20 Aug 2026 12:00:00 +0000"},
+		{ID: "new", Date: "29 Aug 2026 16:02:58 +0000"},
+		{ID: "mid", Date: "25 Aug 2026 09:30:00 +0000"},
+	}
+	SortArticlesNewestFirst(articles)
+
+	var ids []string
+	for _, a := range articles {
+		ids = append(ids, a.ID)
+	}
+	want := []string{"new", "mid", "old"}
+	for i := range want {
+		if ids[i] != want[i] {
+			t.Fatalf("order = %v, want %v", ids, want)
+		}
 	}
 }
 

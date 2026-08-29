@@ -297,8 +297,25 @@ func SortArticlesNewestFirst(articles []RSSArticle) {
 	})
 }
 
+// rssDateLayouts are tried in order. The first is the shape actually
+// observed from a real qBittorrent instance's RSS article "date" field —
+// "29 Aug 2026 16:02:58 +0000" — which is RFC822/1123-like but, unlike any
+// of Go's stdlib RFC822/1123 constants, has no leading weekday and a
+// 4-digit year; none of the stdlib layouts matched it, silently failing
+// every article's date and leaving SortArticlesNewestFirst with nothing
+// to sort by. The rest are kept as fallbacks for other feed/qBittorrent
+// variants.
+var rssDateLayouts = []string{
+	"02 Jan 2006 15:04:05 -0700",
+	"02 Jan 2006 15:04:05 MST",
+	time.RFC3339,
+	time.RFC1123Z,
+	time.RFC1123,
+	time.RFC822Z,
+}
+
 func parseRSSDate(s string) (time.Time, bool) {
-	for _, layout := range []string{time.RFC3339, time.RFC1123Z, time.RFC1123, time.RFC822Z} {
+	for _, layout := range rssDateLayouts {
 		if t, err := time.Parse(layout, s); err == nil {
 			return t, true
 		}
