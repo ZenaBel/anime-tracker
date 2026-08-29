@@ -65,7 +65,8 @@ confirmation prompt) · `r` rescans the library · `s` cycles sort order
 (az → za → added → watched) · `/` opens search · `c` opens the settings
 overlay (qBittorrent/SSH config — see below) · `g` opens the RSS overlay
 (browse/download articles qBittorrent's RSS reader has fetched — see below)
-· `q` quits.
+· `S` runs `sync-downloads` (see below) and refreshes the panes if
+anything came in · `q` quits.
 
 ### Renaming / deleting
 
@@ -215,7 +216,9 @@ so it isn't pulled again — the torrent itself is left alone, still seeding.
 Finishes with a normal library scan. A torrent still mid-download is left
 untouched and picked up on a later run; one whose transfer fails keeps its
 tag and is retried next time too. `--dry-run` lists what's finished without
-touching the network or filesystem.
+touching the network or filesystem. `S` in the TUI runs the same thing
+(no `--dry-run` there) and refreshes the series/episode panes right away if
+anything came in.
 
 There's no background polling — run `sync-downloads` whenever you want to
 check (a cron job or a shell alias works fine for that).

@@ -216,6 +216,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.statusMsg = "queued: " + m.rss.article.Title
 		m.rss = rssState{}
 		return m, nil
+
+	case syncDownloadsDoneMsg:
+		if msg.err != nil {
+			m.err = msg.err
+			m.statusMsg = ""
+			return m, nil
+		}
+		m.err = nil
+		res := msg.result
+		m.statusMsg = fmt.Sprintf("sync: %d synced, %d failed, %d still downloading", len(res.Synced), len(res.Failed), res.Pending)
+		if len(res.Failed) > 0 {
+			m.err = fmt.Errorf("sync-downloads: %s", strings.Join(res.Failed, "; "))
+		}
+		if res.Scanned {
+			return m, loadSeriesCmd(m.store, m.sortMode)
+		}
+		return m, nil
 	}
 
 	return m, nil
@@ -253,6 +270,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "g":
 		m.rss = rssState{active: true, loading: true}
 		return m, loadRSSArticlesCmd(m.store)
+
+	case "S":
+		m.statusMsg = "syncing downloads..."
+		m.err = nil
+		return m, syncDownloadsCmd(m.store, m.rootDir)
 
 	case "p":
 		if len(m.episodes) == 0 {

@@ -9,8 +9,14 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
+
+	"anime-tracker/internal/db"
+	"anime-tracker/internal/qbt"
+	"anime-tracker/internal/scanner"
+	"anime-tracker/internal/settings"
 )
 
 // buildRsyncArgs constructs the argv for pulling remotePath (a file or a
@@ -118,4 +124,83 @@ func ResolveLocalSeriesDir(libraryRoot, remoteBasename string) (path string, isN
 		}
 	}
 	return filepath.Join(libraryRoot, remoteBasename), true, nil
+}
+
+// SyncResult summarizes one SyncDownloads call.
+type SyncResult struct {
+	Synced     []string // torrent names successfully pulled in
+	Failed     []string // "name: error" for each torrent that failed
+	NewFolders []string // local series folders created for brand-new shows
+	Pending    int      // torrents still downloading, left untouched
+	Scanned    bool     // whether a library scan actually ran (only if something synced)
+	Scan       scanner.Result
+}
+
+// SyncDownloads is the shared CLI/TUI entry point for `sync-downloads`: it
+// finds every qbt.Tag-ed torrent that's finished downloading, pulls each
+// one from the remote host into the matching local series folder
+// (creating it if the show is new), flattens away any nested batch-release
+// folder, and removes the tag so it isn't picked up again — a torrent
+// whose transfer fails keeps its tag and is left for the next run. Ends
+// with a library scan if anything was actually synced.
+func SyncDownloads(ctx context.Context, store *db.Store, libraryRoot string) (SyncResult, error) {
+	sshTarget, err := settings.Required(ctx, store, "remote.ssh_target")
+	if err != nil {
+		return SyncResult{}, err
+	}
+	client, err := settings.Connect(ctx, store)
+	if err != nil {
+		return SyncResult{}, err
+	}
+
+	torrents, err := client.ListTorrents(ctx, qbt.Tag)
+	if err != nil {
+		return SyncResult{}, err
+	}
+
+	var res SyncResult
+	var completed []qbt.Torrent
+	for _, t := range torrents {
+		if t.Progress >= 1.0 {
+			completed = append(completed, t)
+		} else {
+			res.Pending++
+		}
+	}
+
+	for _, t := range completed {
+		seriesName := path.Base(t.SavePath)
+		localDir, isNew, err := ResolveLocalSeriesDir(libraryRoot, seriesName)
+		if err != nil {
+			res.Failed = append(res.Failed, fmt.Sprintf("%s: %v", t.Name, err))
+			continue
+		}
+		if isNew {
+			res.NewFolders = append(res.NewFolders, localDir)
+		}
+
+		if err := Fetch(ctx, sshTarget, t.ContentPath, localDir); err != nil {
+			res.Failed = append(res.Failed, fmt.Sprintf("%s: %v", t.Name, err))
+			continue
+		}
+		if err := FlattenDir(localDir); err != nil {
+			res.Failed = append(res.Failed, fmt.Sprintf("%s: %v", t.Name, err))
+			continue
+		}
+		if err := client.RemoveTags(ctx, []string{t.Hash}, qbt.Tag); err != nil {
+			res.Failed = append(res.Failed, fmt.Sprintf("%s: fetched but failed to un-tag (will re-sync next time): %v", t.Name, err))
+			continue
+		}
+		res.Synced = append(res.Synced, t.Name)
+	}
+
+	if len(res.Synced) > 0 {
+		scanRes, err := scanner.Scan(ctx, store, libraryRoot)
+		if err != nil {
+			return res, err
+		}
+		res.Scan = scanRes
+		res.Scanned = true
+	}
+	return res, nil
 }

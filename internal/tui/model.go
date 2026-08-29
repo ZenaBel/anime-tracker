@@ -11,6 +11,7 @@ import (
 	"anime-tracker/internal/library"
 	"anime-tracker/internal/player"
 	"anime-tracker/internal/qbt"
+	"anime-tracker/internal/remote"
 	"anime-tracker/internal/scanner"
 	"anime-tracker/internal/search"
 	"anime-tracker/internal/settings"
@@ -324,6 +325,15 @@ func submitRSSDownloadCmd(store *db.Store, article qbt.RSSArticle, seriesTitle s
 			return rssDownloadDoneMsg{err: err}
 		}
 		return rssDownloadDoneMsg{err: client.AddTorrent(ctx, article.TorrentURL, savePath, qbt.Tag)}
+	}
+}
+
+// syncDownloadsCmd pulls finished remote downloads into the library and
+// rescans — the same logic `sync-downloads` uses on the CLI.
+func syncDownloadsCmd(store *db.Store, libraryRoot string) tea.Cmd {
+	return func() tea.Msg {
+		res, err := remote.SyncDownloads(context.Background(), store, libraryRoot)
+		return syncDownloadsDoneMsg{result: res, err: err}
 	}
 }
 

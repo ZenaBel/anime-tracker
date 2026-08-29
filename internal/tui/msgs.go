@@ -4,6 +4,7 @@ import (
 	"anime-tracker/internal/db"
 	"anime-tracker/internal/player"
 	"anime-tracker/internal/qbt"
+	"anime-tracker/internal/remote"
 	"anime-tracker/internal/scanner"
 )
 
@@ -104,4 +105,11 @@ type rssArticlesLoadedMsg struct {
 // article's torrent to the remote qBittorrent.
 type rssDownloadDoneMsg struct {
 	err error
+}
+
+// syncDownloadsDoneMsg reports the result of pulling finished remote
+// downloads into the library (see the "S" key / `sync-downloads`).
+type syncDownloadsDoneMsg struct {
+	result remote.SyncResult
+	err    error
 }
