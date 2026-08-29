@@ -17,7 +17,7 @@ var configCmd = &cobra.Command{
 
 var configSetCmd = &cobra.Command{
 	Use:   "set <key> [value]",
-	Short: "Set a config value (qbt.url, qbt.username, qbt.password, qbt.insecure_tls, remote.ssh_target, remote.root)",
+	Short: "Set a config value (qbt.url, qbt.username, qbt.password, qbt.insecure_tls, remote.ssh_target, remote.root, remote.host_root)",
 	Args:  cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		key := args[0]

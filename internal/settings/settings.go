@@ -12,6 +12,7 @@ var Keys = []string{
 	"qbt.insecure_tls",
 	"remote.ssh_target",
 	"remote.root",
+	"remote.host_root",
 }
 
 // PasswordKey never gets its stored value shown or pre-filled for editing.

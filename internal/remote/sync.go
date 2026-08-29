@@ -126,6 +126,24 @@ func ResolveLocalSeriesDir(libraryRoot, remoteBasename string) (path string, isN
 	return filepath.Join(libraryRoot, remoteBasename), true, nil
 }
 
+// remapPath rewrites a path qBittorrent reported (containerRoot's point of
+// view — e.g. "/downloads/Show/ep01.mkv") to the equivalent real path SSH
+// actually sees on the host (hostRoot's point of view). Returns rpath
+// unchanged if containerRoot or hostRoot is empty, or rpath isn't actually
+// under containerRoot.
+func remapPath(rpath, containerRoot, hostRoot string) string {
+	if containerRoot == "" || hostRoot == "" {
+		return rpath
+	}
+	if rpath == containerRoot {
+		return hostRoot
+	}
+	if rel, ok := strings.CutPrefix(rpath, containerRoot+"/"); ok {
+		return hostRoot + "/" + rel
+	}
+	return rpath
+}
+
 // SyncResult summarizes one SyncDownloads call.
 type SyncResult struct {
 	Synced     []string // torrent names successfully pulled in
@@ -153,6 +171,23 @@ func SyncDownloads(ctx context.Context, store *db.Store, libraryRoot string) (Sy
 		return SyncResult{}, err
 	}
 
+	// qBittorrent reports paths from its own point of view — if it runs in
+	// a container with the downloads folder bind-mounted somewhere else
+	// than its real host path (e.g. host /home/user/downloads mounted as
+	// /downloads in the container), remote.root (qBittorrent's view, also
+	// what savePath uses when this tool adds a torrent) and
+	// remote.host_root (the real path SSH/rsync actually sees) differ.
+	// Both are optional: if either is unset, paths are used as-is, which
+	// is correct whenever qBittorrent isn't containerized this way.
+	containerRoot, _, err := store.GetSetting(ctx, "remote.root")
+	if err != nil {
+		return SyncResult{}, err
+	}
+	hostRoot, _, err := store.GetSetting(ctx, "remote.host_root")
+	if err != nil {
+		return SyncResult{}, err
+	}
+
 	torrents, err := client.ListTorrents(ctx, qbt.Tag)
 	if err != nil {
 		return SyncResult{}, err
@@ -169,7 +204,7 @@ func SyncDownloads(ctx context.Context, store *db.Store, libraryRoot string) (Sy
 	}
 
 	for _, t := range completed {
-		seriesName := path.Base(t.SavePath)
+		seriesName := path.Base(t.SavePath) // last path segment is unaffected by the remap either way
 		localDir, isNew, err := ResolveLocalSeriesDir(libraryRoot, seriesName)
 		if err != nil {
 			res.Failed = append(res.Failed, fmt.Sprintf("%s: %v", t.Name, err))
@@ -179,7 +214,8 @@ func SyncDownloads(ctx context.Context, store *db.Store, libraryRoot string) (Sy
 			res.NewFolders = append(res.NewFolders, localDir)
 		}
 
-		if err := Fetch(ctx, sshTarget, t.ContentPath, localDir); err != nil {
+		remotePath := remapPath(t.ContentPath, containerRoot, hostRoot)
+		if err := Fetch(ctx, sshTarget, remotePath, localDir); err != nil {
 			res.Failed = append(res.Failed, fmt.Sprintf("%s: %v", t.Name, err))
 			continue
 		}

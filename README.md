@@ -157,7 +157,7 @@ anime-tracker config set remote.root /path/on/the/remote/disk           # mirror
 anime-tracker config set qbt.insecure_tls true   # only if the WebUI uses a self-signed cert
 ```
 
-Or do the same from the TUI: `c` opens a settings overlay listing all six
+Or do the same from the TUI: `c` opens a settings overlay listing all
 keys, `enter` edits the selected one inline (`qbt.password`'s input is
 masked as you type and never pre-filled), `x` clears one, `esc` closes it.
 Same underlying storage either way.
@@ -168,6 +168,21 @@ single-user tool). Requires `rsync` and `ssh` on `PATH` locally, with
 key-based SSH access to the remote host already working (`ssh
 <remote.ssh_target>` should just connect, no password prompt) — this is the
 one part of anime-tracker that isn't a dependency-free static binary.
+
+**If qBittorrent runs in Docker** (common on a seedbox/NAS), `remote.root`
+must be the path *as qBittorrent itself sees it* — its own container path
+(e.g. `/downloads`), since that's what gets sent as `savepath` when this
+tool adds a torrent. If that container path is bind-mounted from a
+different real path on the host (e.g. `/downloads` in the container is
+really `/home/user/qbittorrent/downloads` on the host SSH connects to),
+set `remote.host_root` to that real host path too — `sync-downloads`
+rewrites qBittorrent-reported paths from `remote.root` to `remote.host_root`
+before handing them to rsync. Leave `remote.host_root` unset if qBittorrent
+runs directly on the host (no container) — paths are then used as-is, and
+`remote.root` alone is both the API's and the host's view. The tell that
+this needs setting: `sync-downloads` failing with an rsync error like
+`change_dir "<container path>" failed: No such file or directory` for a
+path that doesn't match what you see over SSH.
 
 **`anime-tracker download <series-query> <magnet-or-torrent-url>`** fuzzy-
 resolves the series (same matching as `play`/`watch`), then tells the

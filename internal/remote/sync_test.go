@@ -19,6 +19,34 @@ func TestBuildRsyncArgs(t *testing.T) {
 	}
 }
 
+func TestRemapPath(t *testing.T) {
+	cases := []struct {
+		name                           string
+		rpath, containerRoot, hostRoot string
+		want                           string
+	}{
+		{
+			"docker bind-mount, real repro shape",
+			"/downloads/Futsutsuka na Akujo dewa Gozaimasu ga - AniLiberty [WEB-DL 1080p HEVC]/ep01.mkv",
+			"/downloads", "/home/nitro/qbittorrent/downloads",
+			"/home/nitro/qbittorrent/downloads/Futsutsuka na Akujo dewa Gozaimasu ga - AniLiberty [WEB-DL 1080p HEVC]/ep01.mkv",
+		},
+		{"path equals containerRoot exactly", "/downloads", "/downloads", "/home/nitro/downloads", "/home/nitro/downloads"},
+		{"neither root configured: unchanged", "/downloads/Show/ep01.mkv", "", "", "/downloads/Show/ep01.mkv"},
+		{"only containerRoot configured: unchanged", "/downloads/Show/ep01.mkv", "/downloads", "", "/downloads/Show/ep01.mkv"},
+		{"only hostRoot configured: unchanged", "/downloads/Show/ep01.mkv", "", "/host/downloads", "/downloads/Show/ep01.mkv"},
+		{"path not under containerRoot: unchanged", "/other/Show/ep01.mkv", "/downloads", "/host/downloads", "/other/Show/ep01.mkv"},
+		{"prefix collision without separator: unchanged", "/downloads2/Show/ep01.mkv", "/downloads", "/host/downloads", "/downloads2/Show/ep01.mkv"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := remapPath(tc.rpath, tc.containerRoot, tc.hostRoot); got != tc.want {
+				t.Errorf("remapPath(%q, %q, %q) = %q, want %q", tc.rpath, tc.containerRoot, tc.hostRoot, got, tc.want)
+			}
+		})
+	}
+}
+
 func writeFile(t *testing.T, path string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
