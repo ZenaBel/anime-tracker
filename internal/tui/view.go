@@ -91,13 +91,16 @@ func (m Model) View() string {
 	if m.settingsActive {
 		return m.viewSettings()
 	}
+	if m.rss.active {
+		return m.viewRSS()
+	}
 
 	left := m.viewSeriesPane()
 	right := m.viewEpisodesPane()
 	body := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 
 	var footer strings.Builder
-	footer.WriteString(helpStyle.Render("↑/↓ or j/k: move  ←/→ or h/l: switch pane  enter: open/focus  space: toggle watched  p: playlist  R: rename  D: delete  r: rescan  s: sort (" + m.sortMode.String() + ")  /: search  c: settings  q: quit"))
+	footer.WriteString(helpStyle.Render("↑/↓ or j/k: move  ←/→ or h/l: switch pane  enter: open/focus  space: toggle watched  p: playlist  R: rename  D: delete  r: rescan  s: sort (" + m.sortMode.String() + ")  /: search  c: settings  g: rss  q: quit"))
 	if m.err != nil {
 		footer.WriteString("\n")
 		footer.WriteString(errStyle.Render("error: " + m.err.Error()))
@@ -332,6 +335,91 @@ func (m Model) viewSettings() string {
 
 	b.WriteString("\n")
 	b.WriteString(helpStyle.Render("enter: edit  x: clear  esc: close"))
+
+	return searchPaneStyle.Render(b.String())
+}
+
+func (m Model) viewRSS() string {
+	var b strings.Builder
+
+	if m.rss.step == rssStepConfirmSeries {
+		b.WriteString(focusedTitle.Render("RSS — pick a series"))
+		b.WriteString("\n\n")
+		b.WriteString(dimTitle.Render("for: " + m.rss.article.Title))
+		b.WriteString("\n> " + m.rss.seriesQuery + "▌\n\n")
+
+		if m.rss.submitting {
+			b.WriteString(dimTitle.Render("queuing..."))
+			b.WriteString("\n")
+		}
+		if m.err != nil {
+			b.WriteString(errStyle.Render("error: " + m.err.Error()))
+			b.WriteString("\n\n")
+		}
+		if len(m.rss.seriesResults) == 0 {
+			b.WriteString(dimTitle.Render("(no matching series)"))
+			b.WriteString("\n")
+		}
+
+		maxVisible := m.visibleRows()
+		start, end := visibleWindow(len(m.rss.seriesResults), m.rss.seriesIdx, maxVisible)
+		for i := start; i < end; i++ {
+			line := formatSearchResult(m.rss.seriesResults[i])
+			if i == m.rss.seriesIdx {
+				line = selectedStyle.Render("> " + line)
+			} else {
+				line = "  " + line
+			}
+			b.WriteString(line)
+			b.WriteString("\n")
+		}
+
+		b.WriteString("\n")
+		b.WriteString(helpStyle.Render("type to filter  ↑/↓: move  enter: confirm & download  esc: back to articles"))
+		return searchPaneStyle.Render(b.String())
+	}
+
+	b.WriteString(focusedTitle.Render("RSS"))
+	b.WriteString(dimTitle.Render(" (unread articles from qBittorrent's RSS feeds)"))
+	b.WriteString("\n\n")
+
+	if m.rss.loading {
+		b.WriteString(dimTitle.Render("loading..."))
+		b.WriteString("\n")
+	}
+	if m.err != nil {
+		b.WriteString(errStyle.Render("error: " + m.err.Error()))
+		b.WriteString("\n\n")
+	}
+	if !m.rss.loading && m.err == nil && len(m.rss.articles) == 0 {
+		b.WriteString(dimTitle.Render("(no unread articles)"))
+		b.WriteString("\n")
+	}
+
+	maxVisible := m.visibleRows()
+	start, end := visibleWindow(len(m.rss.articles), m.rss.idx, maxVisible)
+	if start > 0 {
+		b.WriteString(dimTitle.Render(fmt.Sprintf("  ↑ %d more", start)))
+		b.WriteString("\n")
+	}
+	for i := start; i < end; i++ {
+		a := m.rss.articles[i]
+		line := fmt.Sprintf("[%s] %s", truncate(a.FeedName, 20), truncate(a.Title, 60))
+		if i == m.rss.idx {
+			line = selectedStyle.Render("> " + line)
+		} else {
+			line = "  " + line
+		}
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+	if end < len(m.rss.articles) {
+		b.WriteString(dimTitle.Render(fmt.Sprintf("  ↓ %d more", len(m.rss.articles)-end)))
+		b.WriteString("\n")
+	}
+
+	b.WriteString("\n")
+	b.WriteString(helpStyle.Render("↑/↓: move  enter: pick series & download  esc: close"))
 
 	return searchPaneStyle.Render(b.String())
 }

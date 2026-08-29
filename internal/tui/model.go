@@ -9,8 +9,10 @@ import (
 	"anime-tracker/internal/db"
 	"anime-tracker/internal/library"
 	"anime-tracker/internal/player"
+	"anime-tracker/internal/qbt"
 	"anime-tracker/internal/scanner"
 	"anime-tracker/internal/search"
+	"anime-tracker/internal/settings"
 )
 
 type focusPane int
@@ -59,6 +61,34 @@ type Model struct {
 	settingsIdx     int
 	settingsEditing bool
 	settingsInput   string
+
+	rss rssState
+}
+
+// rssStep distinguishes the RSS overlay's two stages: browsing fetched
+// articles, then confirming which series a chosen one downloads into.
+type rssStep int
+
+const (
+	rssStepArticles rssStep = iota
+	rssStepConfirmSeries
+)
+
+// rssState holds the RSS overlay's state; active whenever active is true.
+type rssState struct {
+	active  bool
+	loading bool
+
+	step     rssStep
+	articles []qbt.RSSArticle
+	idx      int
+
+	// populated once step == rssStepConfirmSeries
+	article       qbt.RSSArticle
+	seriesQuery   string
+	seriesResults []search.Result
+	seriesIdx     int
+	submitting    bool
 }
 
 // manageKind identifies which rename/delete overlay (if any) is active.
@@ -137,6 +167,17 @@ func (m Model) jumpToSearchResult(r search.Result) (Model, tea.Cmd) {
 	return m, loadEpisodesCmd(m.store, r.Series.ID)
 }
 
+// withRSSSeriesResults re-runs the fuzzy series search for the RSS
+// overlay's confirm-series step against the current query, clamping the
+// selection into the new result count.
+func (m Model) withRSSSeriesResults() Model {
+	m.rss.seriesResults = search.Search(m.series, nil, m.rss.seriesQuery, search.ScopeSeries)
+	if m.rss.seriesIdx >= len(m.rss.seriesResults) {
+		m.rss.seriesIdx = max(0, len(m.rss.seriesResults)-1)
+	}
+	return m
+}
+
 func nextSortMode(current db.SortMode) db.SortMode {
 	for i, s := range sortCycle {
 		if s == current {
@@ -183,6 +224,45 @@ func saveSettingCmd(store *db.Store, key, value string) tea.Cmd {
 func unsetSettingCmd(store *db.Store, key string) tea.Cmd {
 	return func() tea.Msg {
 		return settingsSavedMsg{err: store.UnsetSetting(context.Background(), key)}
+	}
+}
+
+// loadRSSArticlesCmd fetches every article qBittorrent's own RSS reader
+// has already parsed, filtered to unread ones and sorted newest first.
+func loadRSSArticlesCmd(store *db.Store) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+		client, err := settings.Connect(ctx, store)
+		if err != nil {
+			return rssArticlesLoadedMsg{err: err}
+		}
+		all, err := client.ListRSSArticles(ctx)
+		if err != nil {
+			return rssArticlesLoadedMsg{err: err}
+		}
+		var unread []qbt.RSSArticle
+		for _, a := range all {
+			if !a.IsRead {
+				unread = append(unread, a)
+			}
+		}
+		qbt.SortArticlesNewestFirst(unread)
+		return rssArticlesLoadedMsg{articles: unread}
+	}
+}
+
+func submitRSSDownloadCmd(store *db.Store, article qbt.RSSArticle, seriesTitle string) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+		savePath, err := settings.RemoteSeriesSavePath(ctx, store, seriesTitle)
+		if err != nil {
+			return rssDownloadDoneMsg{err: err}
+		}
+		client, err := settings.Connect(ctx, store)
+		if err != nil {
+			return rssDownloadDoneMsg{err: err}
+		}
+		return rssDownloadDoneMsg{err: client.AddTorrent(ctx, article.TorrentURL, savePath, qbt.Tag)}
 	}
 }
 

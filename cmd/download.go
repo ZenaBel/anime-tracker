@@ -4,6 +4,9 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+
+	"anime-tracker/internal/qbt"
+	"anime-tracker/internal/settings"
 )
 
 var downloadCmd = &cobra.Command{
@@ -28,16 +31,16 @@ qBittorrent configured via 'config set', saved under
 			return err
 		}
 
-		savePath, err := remoteSeriesSavePath(ctx, store, series.Title)
+		savePath, err := settings.RemoteSeriesSavePath(ctx, store, series.Title)
 		if err != nil {
 			return err
 		}
 
-		client, err := connectQBT(ctx, store)
+		client, err := settings.Connect(ctx, store)
 		if err != nil {
 			return err
 		}
-		if err := client.AddTorrent(ctx, args[1], savePath, qbtTag); err != nil {
+		if err := client.AddTorrent(ctx, args[1], savePath, qbt.Tag); err != nil {
 			return err
 		}
 

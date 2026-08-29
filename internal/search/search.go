@@ -1,6 +1,8 @@
 package search
 
 import (
+	"strings"
+
 	"github.com/sahilm/fuzzy"
 
 	"anime-tracker/internal/db"
@@ -22,6 +24,33 @@ func FindSeries(all []db.SeriesProgress, query string) (db.SeriesProgress, bool)
 		return db.SeriesProgress{}, false
 	}
 	return all[matches[0].Index], true
+}
+
+// GuessSeriesForTitle finds which tracked series a noisy release/RSS title
+// (e.g. "[SubsPlease] Frieren - 05 [1080p]") most likely belongs to. This
+// is the reverse of FindSeries: FindSeries fuzzy-matches a short
+// user-typed query against long series titles, but here the "query" side
+// (the release title) is the long, noisy one and each series title is
+// short — a subsequence match in that direction essentially never hits.
+// Instead, each series title is checked as a plain case-insensitive
+// substring of text, preferring the longest (most specific) match so e.g.
+// "Frieren: Beyond Journey's End" wins over "Frieren" when both would
+// match. Returns false if no tracked series title appears in text at all.
+func GuessSeriesForTitle(all []db.SeriesProgress, text string) (db.SeriesProgress, bool) {
+	lower := strings.ToLower(text)
+
+	var best db.SeriesProgress
+	bestLen := -1
+	for _, s := range all {
+		t := strings.ToLower(s.Title)
+		if t == "" || !strings.Contains(lower, t) {
+			continue
+		}
+		if len(t) > bestLen {
+			best, bestLen = s, len(t)
+		}
+	}
+	return best, bestLen >= 0
 }
 
 func FindEpisode(all []db.Episode, query string) (db.Episode, bool) {

@@ -12,8 +12,16 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"sort"
 	"strings"
+	"time"
 )
+
+// Tag marks every torrent anime-tracker itself cares about — both ones it
+// added directly (via download) and ones the user's own qBittorrent RSS
+// Auto Downloading rules tag the same way — so sync-downloads can find
+// them regardless of how they were added.
+const Tag = "anime-tracker"
 
 // Torrent is the subset of qBittorrent's torrent info this package cares
 // about.
@@ -166,4 +174,101 @@ func (c *Client) do(req *http.Request) (body string, status int, err error) {
 		return "", resp.StatusCode, fmt.Errorf("reading response: %w", err)
 	}
 	return string(b), resp.StatusCode, nil
+}
+
+// RSSArticle is one item from a subscribed RSS feed, as qBittorrent's own
+// RSS reader already fetched and parsed it. anime-tracker never fetches or
+// parses RSS itself.
+type RSSArticle struct {
+	FeedName   string
+	ID         string
+	Title      string
+	TorrentURL string
+	Date       string
+	IsRead     bool
+}
+
+// ListRSSArticles returns every article across every RSS feed (and folder
+// of feeds) qBittorrent is subscribed to.
+func (c *Client) ListRSSArticles(ctx context.Context) ([]RSSArticle, error) {
+	body, status, err := c.get(ctx, "/api/v2/rss/items?withData=true")
+	if err != nil {
+		return nil, fmt.Errorf("listing RSS articles: %w", err)
+	}
+	if status != http.StatusOK {
+		return nil, fmt.Errorf("listing RSS articles: unexpected status %d: %s", status, strings.TrimSpace(body))
+	}
+
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(body), &root); err != nil {
+		return nil, fmt.Errorf("decoding RSS items: %w", err)
+	}
+
+	var out []RSSArticle
+	walkRSSNode(root, &out)
+	return out, nil
+}
+
+// rssFeedNode and rssArticleJSON mirror qBittorrent's RSS item JSON shape.
+// A feed node carries an "articles" key (even if empty); anything else is
+// a folder holding more nodes (feeds can be organized into folders), so
+// the tree is walked recursively to flatten it.
+type rssFeedNode struct {
+	Articles []rssArticleJSON `json:"articles"`
+}
+
+type rssArticleJSON struct {
+	ID         string `json:"id"`
+	Title      string `json:"title"`
+	Date       string `json:"date"`
+	TorrentURL string `json:"torrentURL"`
+	IsRead     bool   `json:"isRead"`
+}
+
+func walkRSSNode(node map[string]json.RawMessage, out *[]RSSArticle) {
+	for name, raw := range node {
+		var feed rssFeedNode
+		if err := json.Unmarshal(raw, &feed); err == nil && feed.Articles != nil {
+			for _, a := range feed.Articles {
+				*out = append(*out, RSSArticle{
+					FeedName:   name,
+					ID:         a.ID,
+					Title:      a.Title,
+					TorrentURL: a.TorrentURL,
+					Date:       a.Date,
+					IsRead:     a.IsRead,
+				})
+			}
+			continue
+		}
+		var folder map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &folder); err == nil {
+			walkRSSNode(folder, out)
+		}
+	}
+}
+
+// SortArticlesNewestFirst sorts articles by date, most recent first;
+// articles whose date can't be parsed sink to the end.
+func SortArticlesNewestFirst(articles []RSSArticle) {
+	sort.SliceStable(articles, func(i, j int) bool {
+		ti, oki := parseRSSDate(articles[i].Date)
+		tj, okj := parseRSSDate(articles[j].Date)
+		if !oki {
+			return false
+		}
+		if !okj {
+			return true
+		}
+		return ti.After(tj)
+	})
+}
+
+func parseRSSDate(s string) (time.Time, bool) {
+	for _, layout := range []string{time.RFC3339, time.RFC1123Z, time.RFC1123, time.RFC822Z} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
 }

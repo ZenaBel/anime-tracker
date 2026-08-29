@@ -27,6 +27,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.settingsActive {
 			return m.handleSettingsKey(msg)
 		}
+		if m.rss.active {
+			return m.handleRSSKey(msg)
+		}
 		return m.handleKey(msg)
 
 	case seriesLoadedMsg:
@@ -189,6 +192,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.err = nil
 		return m, loadSettingsCmd(m.store)
+
+	case rssArticlesLoadedMsg:
+		m.rss.loading = false
+		if msg.err != nil {
+			m.err = msg.err
+			return m, nil
+		}
+		m.err = nil
+		m.rss.articles = msg.articles
+		m.rss.idx = 0
+		return m, nil
+
+	case rssDownloadDoneMsg:
+		m.rss.submitting = false
+		if msg.err != nil {
+			m.err = msg.err
+			return m, nil
+		}
+		m.err = nil
+		m.statusMsg = "queued: " + m.rss.article.Title
+		m.rss = rssState{}
+		return m, nil
 	}
 
 	return m, nil
@@ -222,6 +247,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.settingsEditing = false
 		m.settingsIdx = 0
 		return m, loadSettingsCmd(m.store)
+
+	case "g":
+		m.rss = rssState{active: true, loading: true}
+		return m, loadRSSArticlesCmd(m.store)
 
 	case "p":
 		if len(m.episodes) == 0 {
@@ -495,6 +524,97 @@ func (m Model) handleSettingsEditKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeySpace:
 		m.settingsInput += " "
 		return m, nil
+	}
+	return m, nil
+}
+
+// handleRSSKey routes to the article-browsing or series-confirmation
+// handler depending on the RSS overlay's current step.
+func (m Model) handleRSSKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch m.rss.step {
+	case rssStepConfirmSeries:
+		return m.handleRSSConfirmKey(msg)
+	default:
+		return m.handleRSSArticlesKey(msg)
+	}
+}
+
+func (m Model) handleRSSArticlesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.rss = rssState{}
+		return m, nil
+
+	case "up", "k":
+		if len(m.rss.articles) > 0 {
+			m.rss.idx = clamp(m.rss.idx-1, 0, len(m.rss.articles)-1)
+		}
+		return m, nil
+
+	case "down", "j":
+		if len(m.rss.articles) > 0 {
+			m.rss.idx = clamp(m.rss.idx+1, 0, len(m.rss.articles)-1)
+		}
+		return m, nil
+
+	case "enter":
+		if m.rss.idx < 0 || m.rss.idx >= len(m.rss.articles) {
+			return m, nil
+		}
+		article := m.rss.articles[m.rss.idx]
+		m.rss.step = rssStepConfirmSeries
+		m.rss.article = article
+		if guess, ok := search.GuessSeriesForTitle(m.series, article.Title); ok {
+			m.rss.seriesQuery = guess.Title
+		} else {
+			m.rss.seriesQuery = ""
+		}
+		m.rss.seriesIdx = 0
+		return m.withRSSSeriesResults(), nil
+	}
+	return m, nil
+}
+
+func (m Model) handleRSSConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEsc:
+		m.rss.step = rssStepArticles // back to the article list, not fully closing
+		return m, nil
+
+	case tea.KeyEnter:
+		if m.rss.seriesIdx < 0 || m.rss.seriesIdx >= len(m.rss.seriesResults) {
+			return m, nil
+		}
+		series := m.rss.seriesResults[m.rss.seriesIdx].Series
+		m.rss.submitting = true
+		m.statusMsg = "queuing " + m.rss.article.Title + "..."
+		return m, submitRSSDownloadCmd(m.store, m.rss.article, series.Title)
+
+	case tea.KeyUp:
+		m.rss.seriesIdx = clamp(m.rss.seriesIdx-1, 0, max(0, len(m.rss.seriesResults)-1))
+		return m, nil
+
+	case tea.KeyDown:
+		m.rss.seriesIdx = clamp(m.rss.seriesIdx+1, 0, max(0, len(m.rss.seriesResults)-1))
+		return m, nil
+
+	case tea.KeyBackspace:
+		if r := []rune(m.rss.seriesQuery); len(r) > 0 {
+			m.rss.seriesQuery = string(r[:len(r)-1])
+			m.rss.seriesIdx = 0
+			return m.withRSSSeriesResults(), nil
+		}
+		return m, nil
+
+	case tea.KeyRunes:
+		m.rss.seriesQuery += string(msg.Runes)
+		m.rss.seriesIdx = 0
+		return m.withRSSSeriesResults(), nil
+
+	case tea.KeySpace:
+		m.rss.seriesQuery += " "
+		m.rss.seriesIdx = 0
+		return m.withRSSSeriesResults(), nil
 	}
 	return m, nil
 }

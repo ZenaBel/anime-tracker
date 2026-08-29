@@ -1,14 +1,12 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"anime-tracker/internal/db"
 	"anime-tracker/internal/settings"
 )
 
@@ -115,17 +113,4 @@ func init() {
 	configCmd.AddCommand(configSetCmd)
 	configCmd.AddCommand(configUnsetCmd)
 	configCmd.AddCommand(configShowCmd)
-}
-
-// requiredSetting fetches key, returning a clear error pointing at `config
-// set` if it isn't configured yet.
-func requiredSetting(ctx context.Context, store *db.Store, key string) (string, error) {
-	v, ok, err := store.GetSetting(ctx, key)
-	if err != nil {
-		return "", err
-	}
-	if !ok || v == "" {
-		return "", fmt.Errorf("%s isn't set — run `anime-tracker config set %s <value>` first", key, key)
-	}
-	return v, nil
 }

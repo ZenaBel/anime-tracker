@@ -161,3 +161,96 @@ func TestListTorrents_ErrorStatus(t *testing.T) {
 		t.Fatalf("ListTorrents() error = %v, want mention of 403", err)
 	}
 }
+
+// rssFixture mirrors qBittorrent's real /api/v2/rss/items response shape:
+// feeds nested inside a folder, plus one feed at the root, to exercise the
+// recursive walk.
+const rssFixture = `{
+	"https://example.com/root-feed.xml": {
+		"uid": "u1",
+		"url": "https://example.com/root-feed.xml",
+		"title": "Root Feed",
+		"articles": [
+			{"id":"a1","title":"Frieren - 05 [1080p]","date":"2026-08-20T12:00:00+00:00","torrentURL":"magnet:?xt=urn:btih:aaa","isRead":false},
+			{"id":"a2","title":"Frieren - 04 [1080p]","date":"2026-08-13T12:00:00+00:00","torrentURL":"magnet:?xt=urn:btih:bbb","isRead":true}
+		]
+	},
+	"My Folder": {
+		"https://example.com/nested-feed.xml": {
+			"uid": "u2",
+			"url": "https://example.com/nested-feed.xml",
+			"title": "Nested Feed",
+			"articles": [
+				{"id":"a3","title":"Bleach - 10 [1080p]","date":"2026-08-27T12:00:00+00:00","torrentURL":"magnet:?xt=urn:btih:ccc","isRead":false}
+			]
+		}
+	}
+}`
+
+func TestListRSSArticles(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v2/rss/items" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("withData"); got != "true" {
+			t.Fatalf("withData = %q, want true", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(rssFixture))
+	}))
+	defer srv.Close()
+
+	c, _ := New(srv.URL, false)
+	got, err := c.ListRSSArticles(context.Background())
+	if err != nil {
+		t.Fatalf("ListRSSArticles() error = %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("got %d articles, want 3: %+v", len(got), got)
+	}
+
+	byID := make(map[string]RSSArticle, len(got))
+	for _, a := range got {
+		byID[a.ID] = a
+	}
+
+	nested, ok := byID["a3"]
+	if !ok {
+		t.Fatalf("article a3 (in a folder) missing from result: %+v", got)
+	}
+	if nested.FeedName != "https://example.com/nested-feed.xml" || nested.Title != "Bleach - 10 [1080p]" || nested.IsRead {
+		t.Errorf("nested article = %+v", nested)
+	}
+
+	root, ok := byID["a1"]
+	if !ok || root.TorrentURL != "magnet:?xt=urn:btih:aaa" || root.IsRead {
+		t.Fatalf("root article a1 = %+v (ok=%v)", root, ok)
+	}
+	if read := byID["a2"]; !read.IsRead {
+		t.Fatalf("article a2 should be marked read: %+v", read)
+	}
+}
+
+func TestSortArticlesNewestFirst(t *testing.T) {
+	articles := []RSSArticle{
+		{ID: "old", Date: "2026-08-13T12:00:00+00:00"},
+		{ID: "unparseable", Date: "not a date"},
+		{ID: "new", Date: "2026-08-27T12:00:00+00:00"},
+		{ID: "mid", Date: "2026-08-20T12:00:00+00:00"},
+	}
+	SortArticlesNewestFirst(articles)
+
+	var ids []string
+	for _, a := range articles {
+		ids = append(ids, a.ID)
+	}
+	want := []string{"new", "mid", "old", "unparseable"}
+	if len(ids) != len(want) {
+		t.Fatalf("order = %v, want %v", ids, want)
+	}
+	for i := range want {
+		if ids[i] != want[i] {
+			t.Fatalf("order = %v, want %v", ids, want)
+		}
+	}
+}

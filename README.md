@@ -43,6 +43,8 @@ anime-tracker config show                          # print current config (passw
 anime-tracker config unset <key>
 anime-tracker download <series-query> <magnet-or-torrent-url>   # queue a download on the remote qBittorrent
 anime-tracker sync-downloads [--dry-run]           # pull finished remote downloads into the library + rescan
+anime-tracker rss [--all]                          # list RSS articles qBittorrent's RSS reader has fetched
+anime-tracker rss-download <article-number> [series-query]   # download one listed article
 ```
 
 The four `rename-*`/`delete-*` commands prompt for confirmation (`[y/N]`)
@@ -61,7 +63,9 @@ the rest of the selected series as one playlist · `R` renames the selected
 series/episode (on disk too) · `D` deletes it (on disk too, after a
 confirmation prompt) · `r` rescans the library · `s` cycles sort order
 (az → za → added → watched) · `/` opens search · `c` opens the settings
-overlay (qBittorrent/SSH config — see below) · `q` quits.
+overlay (qBittorrent/SSH config — see below) · `g` opens the RSS overlay
+(browse/download articles qBittorrent's RSS reader has fetched — see below)
+· `q` quits.
 
 ### Renaming / deleting
 
@@ -169,15 +173,33 @@ resolves the series (same matching as `play`/`watch`), then tells the
 remote qBittorrent to grab the given magnet link or `.torrent` URL, saved
 to `<remote.root>/<Series Title>` and tagged `anime-tracker`.
 
-**RSS**: anime-tracker doesn't parse RSS feeds itself — that's left to
-qBittorrent's own built-in RSS + Auto Downloading feature, configured in
-its WebUI. For an RSS rule's downloads to be picked up automatically, set
-the rule's "Save files to a different directory" to
-`<remote.root>/<Series Folder Name>` (matching an existing local series
-folder's name exactly, case-insensitively) and add the tag `anime-tracker`
-to it — the same convention `download` uses. A rule for a brand-new show
-(no matching local folder yet) is fine too; `sync-downloads` creates the
-folder on first sync.
+**RSS**: anime-tracker doesn't fetch or parse RSS feeds itself — subscribe
+to feed URLs in qBittorrent's own WebUI (its RSS tab) as usual, and
+anime-tracker reads what it's already fetched:
+
+- `anime-tracker rss` lists unread articles across every subscribed feed
+  (`--all` includes already-read ones too), newest first. `anime-tracker
+  rss-download <article-number> [series-query]` sends that article's
+  torrent to the remote qBittorrent — with `series-query` omitted, the
+  series is guessed by finding which tracked series' title appears inside
+  the article's title (e.g. "Frieren" inside `[SubsPlease] Frieren - 05
+  [1080p]`) and asks for confirmation first (`-y` skips it).
+- In the TUI, `g` opens the same thing as an overlay: browse unread
+  articles, `enter` on one moves to a series picker pre-filled with the
+  same guess (type to search a different one if it's wrong, same fuzzy
+  matching as `/` search), `enter` again downloads, `esc` steps back one
+  level at a time.
+
+Either way this ends up exactly like `download`: saved to
+`<remote.root>/<Series Title>` and tagged `anime-tracker`, so `sync-downloads`
+picks it up the same way regardless of which path added it. qBittorrent's
+own RSS **Auto Downloading** rules work too, as a hands-off alternative to
+picking articles yourself — point a rule's save path at
+`<remote.root>/<Series Folder Name>` (matching a local series folder name
+exactly, case-insensitively) and add the tag `anime-tracker` to it, and
+`sync-downloads` picks up whatever it grabs the same way. A brand-new show
+with no matching local folder yet is fine either way; `sync-downloads`
+creates the folder on first sync.
 
 **`anime-tracker sync-downloads`** looks up every `anime-tracker`-tagged
 torrent, and for each one that's finished (`progress >= 1.0`, regardless of

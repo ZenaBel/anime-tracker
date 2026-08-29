@@ -3,6 +3,7 @@ package tui
 import (
 	"anime-tracker/internal/db"
 	"anime-tracker/internal/player"
+	"anime-tracker/internal/qbt"
 	"anime-tracker/internal/scanner"
 )
 
@@ -89,5 +90,18 @@ type settingsLoadedMsg struct {
 // settingsSavedMsg reports the result of a set/unset from the settings
 // overlay.
 type settingsSavedMsg struct {
+	err error
+}
+
+// rssArticlesLoadedMsg carries every unread RSS article qBittorrent's own
+// RSS reader has fetched, loaded on opening the RSS overlay.
+type rssArticlesLoadedMsg struct {
+	articles []qbt.RSSArticle
+	err      error
+}
+
+// rssDownloadDoneMsg reports the result of submitting a chosen RSS
+// article's torrent to the remote qBittorrent.
+type rssDownloadDoneMsg struct {
 	err error
 }

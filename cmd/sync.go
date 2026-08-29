@@ -9,6 +9,7 @@ import (
 	"anime-tracker/internal/qbt"
 	"anime-tracker/internal/remote"
 	"anime-tracker/internal/scanner"
+	"anime-tracker/internal/settings"
 )
 
 var syncDryRun bool
@@ -29,17 +30,17 @@ var syncDownloadsCmd = &cobra.Command{
 		defer closeStore()
 
 		ctx := cmd.Context()
-		sshTarget, err := requiredSetting(ctx, store, "remote.ssh_target")
+		sshTarget, err := settings.Required(ctx, store, "remote.ssh_target")
 		if err != nil {
 			return err
 		}
 
-		client, err := connectQBT(ctx, store)
+		client, err := settings.Connect(ctx, store)
 		if err != nil {
 			return err
 		}
 
-		torrents, err := client.ListTorrents(ctx, qbtTag)
+		torrents, err := client.ListTorrents(ctx, qbt.Tag)
 		if err != nil {
 			return err
 		}
@@ -87,7 +88,7 @@ var syncDownloadsCmd = &cobra.Command{
 				failed = append(failed, fmt.Sprintf("%s: %v", t.Name, err))
 				continue
 			}
-			if err := client.RemoveTags(ctx, []string{t.Hash}, qbtTag); err != nil {
+			if err := client.RemoveTags(ctx, []string{t.Hash}, qbt.Tag); err != nil {
 				failed = append(failed, fmt.Sprintf("%s: fetched but failed to un-tag (will re-sync next time): %v", t.Name, err))
 				continue
 			}

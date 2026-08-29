@@ -26,6 +26,35 @@ func TestFindSeries(t *testing.T) {
 	}
 }
 
+func TestGuessSeriesForTitle(t *testing.T) {
+	all := []db.SeriesProgress{
+		{ID: 1, Title: "Attack on Titan"},
+		{ID: 2, Title: "Frieren"},
+		{ID: 3, Title: "Frieren: Beyond Journey's End"},
+		{ID: 4, Title: "Cowboy Bebop"},
+	}
+
+	// The realistic case this exists for: a noisy release title (longer
+	// than any series title) containing the series name as a substring —
+	// FindSeries gets this backwards (it treats the noisy text as the
+	// short query and title as the target, so it never matches).
+	got, ok := GuessSeriesForTitle(all, "[SubsPlease] Cowboy Bebop - 05 [1080p]")
+	if !ok || got.ID != 4 {
+		t.Fatalf("GuessSeriesForTitle(release title) = (%+v, %v), want Cowboy Bebop", got, ok)
+	}
+
+	// The longer, more specific title wins over the shorter one it
+	// contains as a prefix.
+	got, ok = GuessSeriesForTitle(all, "[Group] Frieren: Beyond Journey's End - 12 [1080p]")
+	if !ok || got.ID != 3 {
+		t.Fatalf("GuessSeriesForTitle(ambiguous prefix) = (%+v, %v), want the longer Frieren title", got, ok)
+	}
+
+	if _, ok := GuessSeriesForTitle(all, "[Group] Some Other Show - 01 [1080p]"); ok {
+		t.Fatal("expected no match for an unrelated title")
+	}
+}
+
 func TestFindEpisode(t *testing.T) {
 	all := []db.Episode{
 		{ID: 1, FileName: "[SubsPlease] Jujutsu Kaisen - 05 [1080p].mkv"},
