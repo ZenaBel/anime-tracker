@@ -107,9 +107,17 @@ type rssDownloadDoneMsg struct {
 	err error
 }
 
-// syncDownloadsDoneMsg reports the result of pulling finished remote
-// downloads into the library (see the "S" key / `sync-downloads`).
-type syncDownloadsDoneMsg struct {
-	result remote.SyncResult
-	err    error
+// syncDownloadsStartedMsg reports that a sync-downloads run has started in
+// the background (see the "S" key / `sync-downloads`); ch streams its
+// progress and final result.
+type syncDownloadsStartedMsg struct {
+	ch <-chan remote.SyncEvent
+}
+
+// syncEventMsg carries one event read off a syncDownloadsStartedMsg's
+// channel — either a progress tick or (event.Done) the final result — with
+// ch carried forward so the handler can keep draining it.
+type syncEventMsg struct {
+	ch    <-chan remote.SyncEvent
+	event remote.SyncEvent
 }

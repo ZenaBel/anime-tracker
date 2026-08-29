@@ -58,10 +58,13 @@ var syncDownloadsCmd = &cobra.Command{
 			return nil
 		}
 
-		res, err := remote.SyncDownloads(ctx, store, cfg.Dir)
+		res, err := remote.SyncDownloads(ctx, store, cfg.Dir, func(name string, p remote.FetchProgress) {
+			fmt.Printf("\r  fetching %s: %3d%% (%s)   ", name, p.Percent, p.Rate)
+		})
 		if err != nil {
 			return err
 		}
+		fmt.Println()
 
 		for _, f := range res.NewFolders {
 			fmt.Printf("new series folder: %s\n", f)

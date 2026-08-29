@@ -235,6 +235,13 @@ touching the network or filesystem. `S` in the TUI runs the same thing
 (no `--dry-run` there) and refreshes the series/episode panes right away if
 anything came in.
 
+While a file's actually transferring, both show live progress read from
+rsync's own output — a `%d%%` figure plus transfer rate, updated as it
+changes (not spammed on every rsync tick) — instead of going silent for
+however long a large episode takes. On the CLI this overwrites one line in
+place (`fetching <name>: NN% (rate)`); in the TUI it's the status line
+under `S`.
+
 There's no background polling — run `sync-downloads` whenever you want to
 check (a cron job or a shell alias works fine for that).
 

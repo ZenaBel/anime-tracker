@@ -5,12 +5,17 @@
 package remote
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"anime-tracker/internal/db"
@@ -22,27 +27,100 @@ import (
 // buildRsyncArgs constructs the argv for pulling remotePath (a file or a
 // directory) from sshTarget down into localDir. -s/--protect-args stops
 // the remote shell from reinterpreting brackets/spaces that are common in
-// anime release filenames.
+// anime release filenames. --info=progress2 emits a periodic aggregate
+// progress line for the whole transfer (parsed by parseRsyncProgress);
+// --outbuf=L line-buffers it so it arrives as clean newline-terminated
+// lines over the pipe instead of the interactive carriage-return-only
+// updates rsync uses when it thinks it's talking to a terminal.
 func buildRsyncArgs(sshTarget, remotePath, localDir string) []string {
 	return []string{
 		"-avz",
 		"-s",
+		"--info=progress2",
+		"--outbuf=L",
 		"-e", "ssh",
 		sshTarget + ":" + remotePath,
 		localDir + string(filepath.Separator),
 	}
 }
 
+// FetchProgress is one progress update while a Fetch is running, parsed
+// from rsync's own --info=progress2 output.
+type FetchProgress struct {
+	Percent int
+	Rate    string // rsync's own formatted transfer rate, e.g. "12.34MB/s"
+}
+
+// progressLineRe matches an --info=progress2 line, e.g.:
+//
+//	1,234,567  45%   12.34MB/s    0:00:12 (xfr#1, to-chk=0/1)
+var progressLineRe = regexp.MustCompile(`^\s*[\d,]+\s+(\d{1,3})%\s+(\S+/s)`)
+
+func parseRsyncProgress(line string) (FetchProgress, bool) {
+	m := progressLineRe.FindStringSubmatch(line)
+	if m == nil {
+		return FetchProgress{}, false
+	}
+	pct, err := strconv.Atoi(m[1])
+	if err != nil {
+		return FetchProgress{}, false
+	}
+	return FetchProgress{Percent: pct, Rate: m[2]}, true
+}
+
+// streamRsyncProgress reads r line by line, calling onProgress once per
+// distinct percentage reached (throttling out the many identical-percent
+// updates rsync emits per second), and returns the last line read (for
+// error context if the process then fails). Split out from Fetch so the
+// scanning/throttling logic is testable without a real rsync subprocess.
+func streamRsyncProgress(r io.Reader, onProgress func(FetchProgress)) (lastLine string) {
+	lastPercent := -1
+	sc := bufio.NewScanner(r)
+	for sc.Scan() {
+		line := sc.Text()
+		lastLine = line
+		if p, ok := parseRsyncProgress(line); ok && p.Percent != lastPercent {
+			lastPercent = p.Percent
+			onProgress(p)
+		}
+	}
+	return lastLine
+}
+
 // Fetch rsyncs remotePath (a file or directory) from sshTarget into
-// localDir, creating localDir first if needed.
-func Fetch(ctx context.Context, sshTarget, remotePath, localDir string) error {
+// localDir, creating localDir first if needed. If onProgress is non-nil,
+// it's called once per distinct percentage reached (not once per raw
+// rsync update, which land many times a second) — so a large episode file
+// shows real, visible progress instead of the CLI/TUI going silent for
+// however long the transfer takes.
+func Fetch(ctx context.Context, sshTarget, remotePath, localDir string, onProgress func(FetchProgress)) error {
 	if err := os.MkdirAll(localDir, 0o755); err != nil {
 		return fmt.Errorf("creating %s: %w", localDir, err)
 	}
 	cmd := exec.CommandContext(ctx, "rsync", buildRsyncArgs(sshTarget, remotePath, localDir)...)
-	out, err := cmd.CombinedOutput()
+
+	if onProgress == nil {
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("rsync failed: %w\n%s", err, out)
+		}
+		return nil
+	}
+
+	var stderrBuf bytes.Buffer
+	cmd.Stderr = &stderrBuf
+	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return fmt.Errorf("rsync failed: %w\n%s", err, out)
+		return fmt.Errorf("opening rsync stdout: %w", err)
+	}
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("starting rsync: %w", err)
+	}
+
+	lastLine := streamRsyncProgress(stdout, onProgress)
+
+	if err := cmd.Wait(); err != nil {
+		return fmt.Errorf("rsync failed: %w\n%s\n%s", err, lastLine, stderrBuf.String())
 	}
 	return nil
 }
@@ -160,8 +238,10 @@ type SyncResult struct {
 // (creating it if the show is new), flattens away any nested batch-release
 // folder, and removes the tag so it isn't picked up again — a torrent
 // whose transfer fails keeps its tag and is left for the next run. Ends
-// with a library scan if anything was actually synced.
-func SyncDownloads(ctx context.Context, store *db.Store, libraryRoot string) (SyncResult, error) {
+// with a library scan if anything was actually synced. If onProgress is
+// non-nil, it's called with each torrent's name and Fetch progress as its
+// transfer runs (see Fetch).
+func SyncDownloads(ctx context.Context, store *db.Store, libraryRoot string, onProgress func(torrentName string, p FetchProgress)) (SyncResult, error) {
 	sshTarget, err := settings.Required(ctx, store, "remote.ssh_target")
 	if err != nil {
 		return SyncResult{}, err
@@ -215,7 +295,12 @@ func SyncDownloads(ctx context.Context, store *db.Store, libraryRoot string) (Sy
 		}
 
 		remotePath := remapPath(t.ContentPath, containerRoot, hostRoot)
-		if err := Fetch(ctx, sshTarget, remotePath, localDir); err != nil {
+		var progressFn func(FetchProgress)
+		if onProgress != nil {
+			name := t.Name
+			progressFn = func(p FetchProgress) { onProgress(name, p) }
+		}
+		if err := Fetch(ctx, sshTarget, remotePath, localDir, progressFn); err != nil {
 			res.Failed = append(res.Failed, fmt.Sprintf("%s: %v", t.Name, err))
 			continue
 		}
@@ -239,4 +324,32 @@ func SyncDownloads(ctx context.Context, store *db.Store, libraryRoot string) (Sy
 		res.Scanned = true
 	}
 	return res, nil
+}
+
+// SyncEvent is one update from SyncDownloadsStream: either a progress tick
+// (Done == false) or the final result (Done == true, sent exactly once,
+// always the last value before the channel closes).
+type SyncEvent struct {
+	Done        bool
+	TorrentName string
+	Progress    FetchProgress
+	Result      SyncResult
+	Err         error
+}
+
+// SyncDownloadsStream runs SyncDownloads in the background and streams its
+// progress over the returned channel as it happens, for callers (the TUI)
+// that need to show live progress rather than block until everything's
+// done. The channel receives a SyncEvent per progress tick, then exactly
+// one Done event, then closes.
+func SyncDownloadsStream(ctx context.Context, store *db.Store, libraryRoot string) <-chan SyncEvent {
+	ch := make(chan SyncEvent)
+	go func() {
+		defer close(ch)
+		res, err := SyncDownloads(ctx, store, libraryRoot, func(name string, p FetchProgress) {
+			ch <- SyncEvent{TorrentName: name, Progress: p}
+		})
+		ch <- SyncEvent{Done: true, Result: res, Err: err}
+	}()
+	return ch
 }

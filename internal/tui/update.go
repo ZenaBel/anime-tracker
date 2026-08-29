@@ -217,14 +217,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.rss = rssState{}
 		return m, nil
 
-	case syncDownloadsDoneMsg:
-		if msg.err != nil {
-			m.err = msg.err
+	case syncDownloadsStartedMsg:
+		return m, waitForSyncEventCmd(msg.ch)
+
+	case syncEventMsg:
+		ev := msg.event
+		if !ev.Done {
+			m.statusMsg = fmt.Sprintf("syncing %s: %d%% (%s)", truncate(ev.TorrentName, 40), ev.Progress.Percent, ev.Progress.Rate)
+			return m, waitForSyncEventCmd(msg.ch)
+		}
+		if ev.Err != nil {
+			m.err = ev.Err
 			m.statusMsg = ""
 			return m, nil
 		}
 		m.err = nil
-		res := msg.result
+		res := ev.Result
 		m.statusMsg = fmt.Sprintf("sync: %d synced, %d failed, %d still downloading", len(res.Synced), len(res.Failed), res.Pending)
 		if len(res.Failed) > 0 {
 			m.err = fmt.Errorf("sync-downloads: %s", strings.Join(res.Failed, "; "))
