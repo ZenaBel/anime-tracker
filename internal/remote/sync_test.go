@@ -1,6 +1,7 @@
 package remote
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -222,6 +223,72 @@ func TestStreamRsyncProgress_Throttling(t *testing.T) {
 	wantLastLine := "total size is 1,853,958,835  speedup is 1.00"
 	if lastLine != wantLastLine {
 		t.Errorf("lastLine = %q, want %q", lastLine, wantLastLine)
+	}
+}
+
+// Regression test for a real repro, confirmed by capturing rsync's actual
+// output byte-for-byte: --info=progress2 redraws its line in place using a
+// bare '\r' with no '\n' at all in between — only the line for a
+// *finished* file ends in '\n'. With the old \n-only bufio.ScanLines split,
+// every intermediate '\r'-joined update before that final '\n' was
+// invisible — onProgress never fired until a whole file finished — which
+// is what "stuck at 0%/0.00kB/s" looked like even while bytes were moving.
+func TestStreamRsyncProgress_CRSeparatedUpdates(t *testing.T) {
+	sample := "sending incremental file list\n" +
+		"big.bin\n" +
+		"\r      1,234,567   1%    1.00MB/s    0:00:50" +
+		"\r      2,345,678   2%    1.10MB/s    0:00:48" +
+		"\r      3,456,789   3%    1.20MB/s    0:00:46" +
+		"\r  1,853,958,835 100%  118.20MB/s    0:00:14 (xfr#1, to-chk=0/1)\n" +
+		"\n" +
+		"sent 1,234 bytes  received 987,654,321 bytes  1,234,567.89 bytes/sec\n"
+
+	var got []FetchProgress
+	streamRsyncProgress(strings.NewReader(sample), func(p FetchProgress) {
+		got = append(got, p)
+	})
+
+	want := []FetchProgress{
+		{Percent: 1, Rate: "1.00MB/s"},
+		{Percent: 2, Rate: "1.10MB/s"},
+		{Percent: 3, Rate: "1.20MB/s"},
+		{Percent: 100, Rate: "118.20MB/s"},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %d progress updates, want %d: %+v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("update[%d] = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}
+
+// Without a '\n' in sight, the old \n-only split would keep accumulating
+// one giant token past bufio's default 64KB cap and Scan would stop dead
+// (silently — its error was never checked), while rsync kept writing to
+// the now-unread pipe and blocked, stalling the whole transfer. This feeds
+// well over 64KB of '\r'-joined updates with no '\n' anywhere and checks
+// updates keep flowing throughout, not just up to some silent cutoff.
+func TestStreamRsyncProgress_CRSeparatedUpdates_ExceedsScannerBuffer(t *testing.T) {
+	var sb strings.Builder
+	sb.WriteString("sending incremental file list\nbig.bin\n")
+	const lines = 3000 // ~90KB of '\r'-joined content, no '\n' until the end
+	for i := 1; i <= lines; i++ {
+		fmt.Fprintf(&sb, "\r      %d   %d%%    1.00MB/s    0:00:50", i, i%100)
+	}
+	sb.WriteString("\r  1,853,958,835 100%  118.20MB/s    0:00:14 (xfr#1, to-chk=0/1)\n")
+
+	var got []FetchProgress
+	streamRsyncProgress(strings.NewReader(sb.String()), func(p FetchProgress) {
+		got = append(got, p)
+	})
+
+	if len(got) == 0 {
+		t.Fatal("expected progress updates even past the old 64KB single-token limit, got none")
+	}
+	if last := got[len(got)-1]; last.Percent != 100 {
+		t.Fatalf("last update = %+v, want the final 100%% line to be seen", last)
 	}
 }
 

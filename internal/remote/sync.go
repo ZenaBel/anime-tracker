@@ -102,17 +102,49 @@ func shouldEmitProgress(percent, lastPercent int, now, lastEmit time.Time) bool 
 	return now.Sub(lastEmit) >= progressEmitInterval
 }
 
-// streamRsyncProgress reads r line by line, forwarding progress updates to
-// onProgress per shouldEmitProgress's throttling, and returns the last
-// line read (for error context if the process then fails). Split out from
-// Fetch so the scanning/throttling logic is testable without a real rsync
-// subprocess.
+// scanCROrLF is a bufio.SplitFunc that splits on a bare '\r' as well as
+// '\n' (or a "\r\n" pair, consumed as one separator). rsync's
+// --info=progress2 output redraws its progress line in place using '\r'
+// with no '\n' at all in between — only the line for a *finished* file
+// ends in '\n' — so bufio.ScanLines (which only ever splits on '\n') would
+// treat every intermediate progress tick for one file as part of a single
+// giant token, releasing it only once that file finishes. Worse, once that
+// accumulated token passes bufio's default 64KB cap, Scan stops entirely
+// (silently, since its error was never checked) while rsync keeps writing
+// to the now-unread pipe, so rsync itself blocks and the transfer stalls —
+// which is exactly what "stuck at 0%/0.00kB/s" looked like.
+func scanCROrLF(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	if atEOF && len(data) == 0 {
+		return 0, nil, nil
+	}
+	if i := bytes.IndexAny(data, "\r\n"); i >= 0 {
+		advance = i + 1
+		if data[i] == '\r' && advance < len(data) && data[advance] == '\n' {
+			advance++
+		}
+		return advance, data[:i], nil
+	}
+	if atEOF {
+		return len(data), data, nil
+	}
+	return 0, nil, nil
+}
+
+// streamRsyncProgress reads r line by line (see scanCROrLF), forwarding
+// progress updates to onProgress per shouldEmitProgress's throttling, and
+// returns the last non-empty line read (for error context if the process
+// then fails). Split out from Fetch so the scanning/throttling logic is
+// testable without a real rsync subprocess.
 func streamRsyncProgress(r io.Reader, onProgress func(FetchProgress)) (lastLine string) {
 	lastPercent := -1
 	var lastEmit time.Time
 	sc := bufio.NewScanner(r)
+	sc.Split(scanCROrLF)
 	for sc.Scan() {
 		line := sc.Text()
+		if line == "" {
+			continue
+		}
 		lastLine = line
 		p, ok := parseRsyncProgress(line)
 		if !ok {
