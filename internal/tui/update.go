@@ -652,10 +652,9 @@ func (m Model) handleRSSConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.rss.seriesIdx < 0 || m.rss.seriesIdx >= len(m.rss.seriesResults) {
 			return m, nil
 		}
-		series := m.rss.seriesResults[m.rss.seriesIdx].Series
 		m.rss.submitting = true
 		m.statusMsg = "queuing " + m.rss.article.Title + "..."
-		return m, submitRSSDownloadCmd(m.store, m.rss.article, series.Title)
+		return m, submitRSSDownloadCmd(m.store, m.rss.article)
 
 	case tea.KeyUp:
 		m.rss.seriesIdx = clamp(m.rss.seriesIdx-1, 0, max(0, len(m.rss.seriesResults)-1))

@@ -130,7 +130,7 @@ and confirmed before downloading (pass -y to skip the confirmation).`,
 			}
 		}
 
-		savePath, err := settings.RemoteDownloadSavePath(ctx, store, series.Title)
+		savePath, err := settings.RemoteDownloadSavePath(ctx, store)
 		if err != nil {
 			return err
 		}

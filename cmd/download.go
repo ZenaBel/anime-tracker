@@ -14,8 +14,7 @@ var downloadCmd = &cobra.Command{
 	Short: "Send a magnet link/torrent URL to the remote qBittorrent for a tracked series",
 	Long: `Resolves <series-query> against your tracked series (fuzzy-matched, same
 as play/watch/playlist), then submits <magnet-or-torrent-url> to the remote
-qBittorrent configured via 'config set', saved under remote.root (or
-<remote.root>/<Series Title> if remote.download_subfolder=true) and tagged
+qBittorrent configured via 'config set', saved under remote.root and tagged
 "anime-tracker" so a later 'sync-downloads' picks it up once it finishes.`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -31,7 +30,7 @@ qBittorrent configured via 'config set', saved under remote.root (or
 			return err
 		}
 
-		savePath, err := settings.RemoteDownloadSavePath(ctx, store, series.Title)
+		savePath, err := settings.RemoteDownloadSavePath(ctx, store)
 		if err != nil {
 			return err
 		}

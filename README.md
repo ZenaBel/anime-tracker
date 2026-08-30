@@ -155,7 +155,6 @@ anime-tracker config set qbt.password        # prompts, hidden input
 anime-tracker config set remote.ssh_target <user>@seedbox.example.com   # or an ~/.ssh/config alias
 anime-tracker config set remote.root /path/on/the/remote/disk           # where torrents anime-tracker submits are saved
 anime-tracker config set qbt.insecure_tls true   # only if the WebUI uses a self-signed cert
-anime-tracker config set remote.download_subfolder true   # optional, see below — off (flat) by default
 ```
 
 Or do the same from the TUI: `c` opens a settings overlay listing all
@@ -188,18 +187,15 @@ path that doesn't match what you see over SSH.
 **`anime-tracker download <series-query> <magnet-or-torrent-url>`** fuzzy-
 resolves the series (same matching as `play`/`watch`), then tells the
 remote qBittorrent to grab the given magnet link or `.torrent` URL, saved
-to `remote.root` itself and tagged `anime-tracker`. By default no
-per-series subfolder is added on the remote side — most release groups'
-torrents already wrap their own files in a folder named after the release
-(which for a tracked show is typically the series title itself), so adding
-`<remote.root>/<Series Title>` on top used to leave a completed torrent
-nested two folders deep locally (one layer from the save path, one already
-inside the torrent) until `sync-downloads`' flattening cleaned it up —
-correctly, but wastefully re-fetching the episode into that stray folder
-every run in the meantime. Set `remote.download_subfolder true` to opt
-back into the old `<remote.root>/<Series Title>` layout (e.g. if your
-releases don't already wrap their files in a folder and you'd rather keep
-the remote disk organized by series too).
+to `remote.root` itself (flat, no per-series subfolder added) and tagged
+`anime-tracker`. Flat because most release groups' torrents already wrap
+their own files in a folder named after the release (which for a tracked
+show is typically the series title itself) — adding `<remote.root>/<Series
+Title>` on top used to leave a completed torrent nested two folders deep
+locally (one layer from the save path, one already inside the torrent)
+until `sync-downloads`' flattening cleaned it up — correctly, but
+wastefully re-fetching the episode into that stray folder every run in the
+meantime.
 
 **RSS**: anime-tracker doesn't fetch or parse RSS feeds itself — subscribe
 to feed URLs in qBittorrent's own WebUI (its RSS tab) as usual, and
@@ -223,9 +219,9 @@ anime-tracker reads what it's already fetched:
   time.
 
 Either way this ends up exactly like `download`: saved to `remote.root`
-(flat, unless `remote.download_subfolder true`) and tagged
-`anime-tracker`, so `sync-downloads` picks it up the same way regardless
-of which path added it. qBittorrent's own RSS **Auto Downloading** rules
+(flat) and tagged `anime-tracker`, so `sync-downloads` picks it up the
+same way regardless of which path added it. qBittorrent's own RSS **Auto
+Downloading** rules
 work too, as a hands-off alternative to picking articles yourself — either
 leave a rule's save path on qBittorrent's default (flat under
 `remote.root`) and just add the tag `anime-tracker`, or point it at
@@ -257,11 +253,10 @@ there) and refreshes the series/episode panes right away if anything came
 in.
 
 **Which local folder a synced torrent lands in**: if its save path has a
-per-series subfolder (`<remote.root>/<Series>` — from a rule with a
-per-rule override, or `download`/`rss-download` with
-`remote.download_subfolder true`), that segment is used directly. A
-torrent saved flat (save path exactly equal to `remote.root` — the default
-for `download`/`rss-download` now, and for any Auto Downloading rule left
+per-series subfolder (`<remote.root>/<Series>` — from an Auto Downloading
+rule with its own per-rule override), that segment is used directly. A
+torrent saved flat (save path exactly equal to `remote.root` — always the
+case for `download`/`rss-download`, and for any Auto Downloading rule left
 on qBittorrent's plain default save location) has no folder segment to
 read a series from; rather than dumping it into one shared local folder
 literally named after `remote.root`'s own last segment (e.g. everything

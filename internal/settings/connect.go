@@ -3,7 +3,6 @@ package settings
 import (
 	"context"
 	"fmt"
-	"path"
 
 	"anime-tracker/internal/db"
 	"anime-tracker/internal/qbt"
@@ -53,39 +52,23 @@ func Connect(ctx context.Context, store *db.Store) (*qbt.Client, error) {
 	return c, nil
 }
 
-// RemoteDownloadSavePath computes where a torrent for seriesTitle should be
-// saved on the remote host, for `download`/`rss-download` to pass as
-// AddTorrent's savepath.
+// RemoteDownloadSavePath returns remote.root as the save path for a
+// torrent `download`/`rss-download` submits, to pass as AddTorrent's
+// savepath — flat, with no per-series subfolder added.
 //
-// Defaults to remote.root itself (flat) — the same layout a qBittorrent
-// RSS Auto Downloading rule with no "save to a different directory"
-// override already uses, which sync-downloads' resolveSeriesNameForSync
-// already resolves correctly via search.GuessSeriesForTitle. Set
-// remote.download_subfolder=true to get the old <remote.root>/<Series
-// Title> per-series-subfolder layout instead.
-//
-// Why flat is the default: AniLiberty (and most release groups') torrents
+// This used to append <Series Title>, but most release groups' torrents
 // already wrap their own files in a folder named after the release, which
-// for a tracked series is typically the series title itself. With the
-// per-series-subfolder layout, that meant a completed torrent's
-// content_path ended up two levels deep
+// for a tracked show is typically the series title itself. Combined, a
+// completed torrent's content_path ended up two folders deep
 // (.../<Series Title>/<Series Title>/episode.mkv) — one layer added by
 // savepath, one already inside the torrent. sync-downloads' same-name
 // merge (see remote.buildRsyncArgs) only collapses one such layer, not
 // two, so the second stayed nested until FlattenDir's recursive walk
 // cleaned it up — wastefully, re-fetching the whole episode into that
-// stray folder on every subsequent sync-downloads run.
-func RemoteDownloadSavePath(ctx context.Context, store *db.Store, seriesTitle string) (string, error) {
-	root, err := Required(ctx, store, "remote.root")
-	if err != nil {
-		return "", err
-	}
-	subfolder, _, err := store.GetSetting(ctx, "remote.download_subfolder")
-	if err != nil {
-		return "", err
-	}
-	if subfolder == "true" {
-		return path.Join(root, seriesTitle), nil
-	}
-	return root, nil
+// stray folder on every subsequent sync-downloads run. Flat matches what
+// a qBittorrent RSS Auto Downloading rule with no per-rule save-path
+// override already uses, which sync-downloads' resolveSeriesNameForSync
+// already resolves correctly via search.GuessSeriesForTitle.
+func RemoteDownloadSavePath(ctx context.Context, store *db.Store) (string, error) {
+	return Required(ctx, store, "remote.root")
 }

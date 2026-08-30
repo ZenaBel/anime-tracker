@@ -313,10 +313,10 @@ func loadRSSArticlesCmd(store *db.Store) tea.Cmd {
 	}
 }
 
-func submitRSSDownloadCmd(store *db.Store, article qbt.RSSArticle, seriesTitle string) tea.Cmd {
+func submitRSSDownloadCmd(store *db.Store, article qbt.RSSArticle) tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
-		savePath, err := settings.RemoteDownloadSavePath(ctx, store, seriesTitle)
+		savePath, err := settings.RemoteDownloadSavePath(ctx, store)
 		if err != nil {
 			return rssDownloadDoneMsg{err: err}
 		}
