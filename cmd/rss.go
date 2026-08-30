@@ -141,6 +141,9 @@ and confirmed before downloading (pass -y to skip the confirmation).`,
 		if err := client.AddTorrent(ctx, article.TorrentURL, savePath, qbt.Tag); err != nil {
 			return err
 		}
+		if err := client.MarkRSSArticleRead(ctx, article.FeedName, article.ID); err != nil {
+			fmt.Printf("warning: queued but failed to mark article read: %v\n", err)
+		}
 
 		fmt.Printf("queued %q for %s, saving to %s\n", article.Title, series.Title, savePath)
 		return nil

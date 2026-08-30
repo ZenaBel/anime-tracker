@@ -216,6 +216,45 @@ func TestRemoveTags(t *testing.T) {
 	}
 }
 
+// Regression test: verified against a real qBittorrent instance that
+// itemPath=<feed name>&articleId=<article id> is what actually flips
+// isRead to true (confirmed by re-fetching /rss/items afterward).
+func TestMarkRSSArticleRead(t *testing.T) {
+	var gotPath, gotItemPath, gotArticleID string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		if err := r.ParseForm(); err != nil {
+			t.Fatal(err)
+		}
+		gotItemPath = r.FormValue("itemPath")
+		gotArticleID = r.FormValue("articleId")
+	}))
+	defer srv.Close()
+
+	c, _ := New(srv.URL, false)
+	if err := c.MarkRSSArticleRead(context.Background(), "AniLiberty", "abc123"); err != nil {
+		t.Fatalf("MarkRSSArticleRead() error = %v", err)
+	}
+	if gotPath != "/api/v2/rss/markAsRead" {
+		t.Fatalf("path = %q, want /api/v2/rss/markAsRead", gotPath)
+	}
+	if gotItemPath != "AniLiberty" || gotArticleID != "abc123" {
+		t.Fatalf("sent itemPath=%q articleId=%q", gotItemPath, gotArticleID)
+	}
+}
+
+func TestMarkRSSArticleRead_ErrorStatus(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer srv.Close()
+
+	c, _ := New(srv.URL, false)
+	if err := c.MarkRSSArticleRead(context.Background(), "AniLiberty", "abc123"); err == nil {
+		t.Fatal("expected an error on non-200 status")
+	}
+}
+
 func TestListTorrents_ErrorStatus(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)

@@ -148,6 +148,22 @@ func (r rssState) currentArticles() []qbt.RSSArticle {
 	return r.feeds[r.feedIdx].Articles
 }
 
+// markArticleRead flips IsRead to true (in place, everywhere articleID
+// appears — both its real feed's group and the synthetic "Unread"
+// aggregate carry their own copy) and adjusts each affected group's
+// Unread count. A no-op if the article is already read or not found.
+func (r *rssState) markArticleRead(articleID string) {
+	for gi := range r.feeds {
+		for ai := range r.feeds[gi].Articles {
+			a := &r.feeds[gi].Articles[ai]
+			if a.ID == articleID && !a.IsRead {
+				a.IsRead = true
+				r.feeds[gi].Unread--
+			}
+		}
+	}
+}
+
 // manageKind identifies which rename/delete overlay (if any) is active.
 type manageKind int
 
@@ -299,7 +315,25 @@ func submitRSSDownloadCmd(store *db.Store, article qbt.RSSArticle) tea.Cmd {
 		if err != nil {
 			return rssDownloadDoneMsg{err: err}
 		}
-		return rssDownloadDoneMsg{err: client.AddTorrent(ctx, article.TorrentURL, savePath, qbt.Tag)}
+		if err := client.AddTorrent(ctx, article.TorrentURL, savePath, qbt.Tag); err != nil {
+			return rssDownloadDoneMsg{err: err}
+		}
+		_ = client.MarkRSSArticleRead(ctx, article.FeedName, article.ID) // best-effort; the download already succeeded
+		return rssDownloadDoneMsg{}
+	}
+}
+
+// markRSSArticleReadCmd tells qBittorrent an article's been read (space
+// key in the RSS overlay); the local state is already updated
+// optimistically before this fires (see rssState.markArticleRead).
+func markRSSArticleReadCmd(store *db.Store, feedName, articleID string) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+		client, err := settings.Connect(ctx, store)
+		if err != nil {
+			return rssMarkReadDoneMsg{err: err}
+		}
+		return rssMarkReadDoneMsg{err: client.MarkRSSArticleRead(ctx, feedName, articleID)}
 	}
 }
 

@@ -173,6 +173,21 @@ func (c *Client) RemoveTags(ctx context.Context, hashes []string, tags string) e
 	return nil
 }
 
+// MarkRSSArticleRead marks one RSS article as read, the same as opening it
+// in qBittorrent's own WebUI RSS reader would. feedName is the article's
+// RSSArticle.FeedName; articleID is its RSSArticle.ID.
+func (c *Client) MarkRSSArticleRead(ctx context.Context, feedName, articleID string) error {
+	form := url.Values{"itemPath": {feedName}, "articleId": {articleID}}
+	body, status, err := c.post(ctx, "/api/v2/rss/markAsRead", form)
+	if err != nil {
+		return fmt.Errorf("marking RSS article read: %w", err)
+	}
+	if status != http.StatusOK {
+		return fmt.Errorf("marking RSS article read: unexpected status %d: %s", status, strings.TrimSpace(body))
+	}
+	return nil
+}
+
 func (c *Client) post(ctx context.Context, path string, form url.Values) (body string, status int, err error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, strings.NewReader(form.Encode()))
 	if err != nil {

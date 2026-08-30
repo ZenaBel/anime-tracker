@@ -217,6 +217,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.rss = rssState{}
 		return m, nil
 
+	case rssMarkReadDoneMsg:
+		// Local state is already updated optimistically; only surface a
+		// failure (the mark-as-read didn't actually stick on qBittorrent's
+		// side), never revert the local read state over it.
+		if msg.err != nil {
+			m.err = msg.err
+		}
+		return m, nil
+
 	case syncDownloadsStartedMsg:
 		return m, waitForSyncEventCmd(msg.ch)
 
@@ -624,6 +633,21 @@ func (m Model) handleRSSKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.rss.submitting = true
 		m.statusMsg = "queuing " + article.Title + "..."
 		return m, submitRSSDownloadCmd(m.store, article)
+
+	case " ":
+		if m.rss.focus != rssFocusArticles {
+			return m, nil
+		}
+		arts := m.rss.currentArticles()
+		if m.rss.articleIdx < 0 || m.rss.articleIdx >= len(arts) {
+			return m, nil
+		}
+		article := arts[m.rss.articleIdx]
+		if article.IsRead {
+			return m, nil
+		}
+		m.rss.markArticleRead(article.ID)
+		return m, markRSSArticleReadCmd(m.store, article.FeedName, article.ID)
 	}
 	return m, nil
 }

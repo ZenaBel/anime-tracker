@@ -207,14 +207,19 @@ anime-tracker reads what it's already fetched:
   torrent to the remote qBittorrent — with `series-query` omitted, the
   series is guessed by finding which tracked series' title appears inside
   the article's title (e.g. "Frieren" inside `[SubsPlease] Frieren - 05
-  [1080p]`) and asks for confirmation first (`-y` skips it).
+  [1080p]`) and asks for confirmation first (`-y` skips it). On success the
+  article is marked read in qBittorrent's own RSS reader too (same as
+  opening it there), so it drops off a later `rss` listing.
 - In the TUI, `g` opens the same thing as a two-pane overlay — feeds on the
   left (with unread counts, plus a synthetic "Unread" entry aggregating
   every feed, both mirroring qBittorrent's own WebUI RSS panel), that
   feed's articles on the right — navigated like the main series/episodes
   panes (`←/→`/`h/l` switch panes, `enter` on a feed focuses its articles).
   `enter` on an article downloads it immediately (no confirmation step —
-  save path is always flat, so there's nothing to pick), `esc` closes.
+  save path is always flat, so there's nothing to pick) and marks it read;
+  `space` marks the selected article read without downloading it (already-
+  read articles render dimmed, same as qBittorrent's own RSS reader);
+  `esc` closes.
 
 Either way this ends up exactly like `download`: saved to `remote.root`
 (flat) and tagged `anime-tracker`, so `sync-downloads` picks it up the

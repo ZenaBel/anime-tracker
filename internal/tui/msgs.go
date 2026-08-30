@@ -107,6 +107,14 @@ type rssDownloadDoneMsg struct {
 	err error
 }
 
+// rssMarkReadDoneMsg reports the result of a manual "mark as read" (space
+// key) once qBittorrent's API call returns. The local read state is
+// already updated optimistically by the time this arrives; err is only
+// surfaced if the API call itself failed.
+type rssMarkReadDoneMsg struct {
+	err error
+}
+
 // syncDownloadsStartedMsg reports that a sync-downloads run has started in
 // the background (see the "S" key / `sync-downloads`); ch streams its
 // progress and final result.
