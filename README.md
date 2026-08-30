@@ -213,10 +213,8 @@ anime-tracker reads what it's already fetched:
   every feed, both mirroring qBittorrent's own WebUI RSS panel), that
   feed's articles on the right — navigated like the main series/episodes
   panes (`←/→`/`h/l` switch panes, `enter` on a feed focuses its articles).
-  `enter` on an article moves to a series picker pre-filled with the same
-  guess (type to search a different one if it's wrong, same fuzzy matching
-  as `/` search), `enter` again downloads, `esc` steps back one level at a
-  time.
+  `enter` on an article downloads it immediately (no confirmation step —
+  save path is always flat, so there's nothing to pick), `esc` closes.
 
 Either way this ends up exactly like `download`: saved to `remote.root`
 (flat) and tagged `anime-tracker`, so `sync-downloads` picks it up the

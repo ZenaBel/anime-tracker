@@ -67,17 +67,7 @@ type Model struct {
 	rss rssState
 }
 
-// rssStep distinguishes the RSS overlay's two stages: browsing fetched
-// feeds/articles, then confirming which series a chosen one downloads
-// into.
-type rssStep int
-
-const (
-	rssStepBrowse rssStep = iota
-	rssStepConfirmSeries
-)
-
-// rssFocus is which of the RSS overlay's two browse-step panes has focus,
+// rssFocus is which of the RSS overlay's two panes has focus,
 // mirroring the main view's series/episodes pane split.
 type rssFocus int
 
@@ -139,18 +129,14 @@ type rssState struct {
 	active  bool
 	loading bool
 
-	step       rssStep
 	feeds      []rssFeedGroup
 	feedIdx    int
 	articleIdx int
 	focus      rssFocus
 
-	// populated once step == rssStepConfirmSeries
-	article       qbt.RSSArticle
-	seriesQuery   string
-	seriesResults []search.Result
-	seriesIdx     int
-	submitting    bool
+	// populated once a download is submitted, for status/error display
+	article    qbt.RSSArticle
+	submitting bool
 }
 
 // currentArticles returns the article list for whichever feed is
@@ -236,17 +222,6 @@ func (m Model) jumpToSearchResult(r search.Result) (Model, tea.Cmd) {
 	m.focus = focusEpisodes
 	m.pendingEpisodeID = r.Episode.ID
 	return m, loadEpisodesCmd(m.store, r.Series.ID)
-}
-
-// withRSSSeriesResults re-runs the fuzzy series search for the RSS
-// overlay's confirm-series step against the current query, clamping the
-// selection into the new result count.
-func (m Model) withRSSSeriesResults() Model {
-	m.rss.seriesResults = search.Search(m.series, nil, m.rss.seriesQuery, search.ScopeSeries)
-	if m.rss.seriesIdx >= len(m.rss.seriesResults) {
-		m.rss.seriesIdx = max(0, len(m.rss.seriesResults)-1)
-	}
-	return m
 }
 
 func nextSortMode(current db.SortMode) db.SortMode {

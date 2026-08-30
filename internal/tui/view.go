@@ -340,45 +340,6 @@ func (m Model) viewSettings() string {
 }
 
 func (m Model) viewRSS() string {
-	var b strings.Builder
-
-	if m.rss.step == rssStepConfirmSeries {
-		b.WriteString(focusedTitle.Render("RSS — pick a series"))
-		b.WriteString("\n\n")
-		b.WriteString(dimTitle.Render("for: " + m.rss.article.Title))
-		b.WriteString("\n> " + m.rss.seriesQuery + "▌\n\n")
-
-		if m.rss.submitting {
-			b.WriteString(dimTitle.Render("queuing..."))
-			b.WriteString("\n")
-		}
-		if m.err != nil {
-			b.WriteString(errStyle.Render("error: " + m.err.Error()))
-			b.WriteString("\n\n")
-		}
-		if len(m.rss.seriesResults) == 0 {
-			b.WriteString(dimTitle.Render("(no matching series)"))
-			b.WriteString("\n")
-		}
-
-		maxVisible := m.visibleRows()
-		start, end := visibleWindow(len(m.rss.seriesResults), m.rss.seriesIdx, maxVisible)
-		for i := start; i < end; i++ {
-			line := formatSearchResult(m.rss.seriesResults[i])
-			if i == m.rss.seriesIdx {
-				line = selectedStyle.Render("> " + line)
-			} else {
-				line = "  " + line
-			}
-			b.WriteString(line)
-			b.WriteString("\n")
-		}
-
-		b.WriteString("\n")
-		b.WriteString(helpStyle.Render("type to filter  ↑/↓: move  enter: confirm & download  esc: back to articles"))
-		return searchPaneStyle.Render(b.String())
-	}
-
 	left := m.viewRSSFeedsPane()
 	right := m.viewRSSArticlesPane()
 	body := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
@@ -387,7 +348,11 @@ func (m Model) viewRSS() string {
 	if m.rss.loading {
 		footer.WriteString(helpStyle.Render("loading..."))
 	} else {
-		footer.WriteString(helpStyle.Render("↑/↓ or j/k: move  ←/→ or h/l: switch pane  enter: open/pick & download  esc: close"))
+		footer.WriteString(helpStyle.Render("↑/↓ or j/k: move  ←/→ or h/l: switch pane  enter: open/download  esc: close"))
+	}
+	if m.rss.submitting {
+		footer.WriteString("\n")
+		footer.WriteString(dimTitle.Render("queuing " + m.rss.article.Title + "..."))
 	}
 	if m.err != nil {
 		footer.WriteString("\n")

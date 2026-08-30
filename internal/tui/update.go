@@ -560,22 +560,13 @@ func (m Model) handleSettingsEditKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleRSSKey routes to the article-browsing or series-confirmation
-// handler depending on the RSS overlay's current step.
-func (m Model) handleRSSKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch m.rss.step {
-	case rssStepConfirmSeries:
-		return m.handleRSSConfirmKey(msg)
-	default:
-		return m.handleRSSArticlesKey(msg)
-	}
-}
-
-// handleRSSArticlesKey handles the browse step: a feeds pane on the left
-// (a synthetic "Unread" aggregate plus each real subscribed feed) and that
+// handleRSSKey handles the RSS overlay: a feeds pane on the left (a
+// synthetic "Unread" aggregate plus each real subscribed feed) and that
 // feed's articles on the right, navigated the same way as the main view's
-// series/episodes panes.
-func (m Model) handleRSSArticlesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+// series/episodes panes. Enter on an article downloads it immediately —
+// save path is always flat (see settings.RemoteDownloadSavePath), so
+// there's nothing left to confirm before submitting.
+func (m Model) handleRSSKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.rss = rssState{}
@@ -629,58 +620,10 @@ func (m Model) handleRSSArticlesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		article := arts[m.rss.articleIdx]
-		m.rss.step = rssStepConfirmSeries
 		m.rss.article = article
-		if guess, ok := search.GuessSeriesForTitle(m.series, article.Title); ok {
-			m.rss.seriesQuery = guess.Title
-		} else {
-			m.rss.seriesQuery = ""
-		}
-		m.rss.seriesIdx = 0
-		return m.withRSSSeriesResults(), nil
-	}
-	return m, nil
-}
-
-func (m Model) handleRSSConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.Type {
-	case tea.KeyEsc:
-		m.rss.step = rssStepBrowse // back to the feed/article panes, not fully closing
-		return m, nil
-
-	case tea.KeyEnter:
-		if m.rss.seriesIdx < 0 || m.rss.seriesIdx >= len(m.rss.seriesResults) {
-			return m, nil
-		}
 		m.rss.submitting = true
-		m.statusMsg = "queuing " + m.rss.article.Title + "..."
-		return m, submitRSSDownloadCmd(m.store, m.rss.article)
-
-	case tea.KeyUp:
-		m.rss.seriesIdx = clamp(m.rss.seriesIdx-1, 0, max(0, len(m.rss.seriesResults)-1))
-		return m, nil
-
-	case tea.KeyDown:
-		m.rss.seriesIdx = clamp(m.rss.seriesIdx+1, 0, max(0, len(m.rss.seriesResults)-1))
-		return m, nil
-
-	case tea.KeyBackspace:
-		if r := []rune(m.rss.seriesQuery); len(r) > 0 {
-			m.rss.seriesQuery = string(r[:len(r)-1])
-			m.rss.seriesIdx = 0
-			return m.withRSSSeriesResults(), nil
-		}
-		return m, nil
-
-	case tea.KeyRunes:
-		m.rss.seriesQuery += string(msg.Runes)
-		m.rss.seriesIdx = 0
-		return m.withRSSSeriesResults(), nil
-
-	case tea.KeySpace:
-		m.rss.seriesQuery += " "
-		m.rss.seriesIdx = 0
-		return m.withRSSSeriesResults(), nil
+		m.statusMsg = "queuing " + article.Title + "..."
+		return m, submitRSSDownloadCmd(m.store, article)
 	}
 	return m, nil
 }
