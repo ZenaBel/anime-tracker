@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"anime-tracker/internal/db"
+	"anime-tracker/internal/qbt"
 )
 
 func TestBuildRsyncArgs(t *testing.T) {
@@ -131,6 +132,66 @@ func TestResolveSeriesNameForSync(t *testing.T) {
 		_, ok := resolveSeriesNameForSync("/downloads", "/downloads", "[SubsPlease] Some Unrelated Show - 01 [1080p]", allSeries)
 		if ok {
 			t.Fatal("expected resolveSeriesNameForSync to fail when nothing matches, not guess wrong")
+		}
+	})
+}
+
+func TestPlanSync(t *testing.T) {
+	allSeries := []db.SeriesProgress{{ID: 1, Title: "Frieren"}}
+	libRoot := t.TempDir()
+	if err := os.Mkdir(filepath.Join(libRoot, "Frieren"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("proper subfolder, content_path nested with matching name: would merge", func(t *testing.T) {
+		tr := qbt.Torrent{
+			Name:        "[SubsPlease] Frieren - 05 [1080p]",
+			SavePath:    "/downloads/Frieren",
+			ContentPath: "/downloads/Frieren/Frieren",
+		}
+		plan := PlanSync(tr, "/downloads", "", libRoot, allSeries)
+		if !plan.OK || !plan.WouldMergeIntoDir {
+			t.Fatalf("PlanSync() = %+v, want OK and WouldMergeIntoDir", plan)
+		}
+	})
+
+	// A regular batch folder named after the release, not the series — the
+	// intended "gets nested then FlattenDir sorts it out" case, not a bug.
+	t.Run("content_path basename differs from series name: no merge, by design", func(t *testing.T) {
+		tr := qbt.Torrent{
+			Name:        "[Group] Frieren Batch 01-10",
+			SavePath:    "/downloads/Frieren",
+			ContentPath: "/downloads/Frieren/[Group] Frieren Batch 01-10",
+		}
+		plan := PlanSync(tr, "/downloads", "", libRoot, allSeries)
+		if !plan.OK || plan.WouldMergeIntoDir {
+			t.Fatalf("PlanSync() = %+v, want OK and !WouldMergeIntoDir", plan)
+		}
+	})
+
+	// Regression guard: two folder names that render identically can still
+	// differ byte-for-byte — here an ASCII hyphen vs a Unicode en dash —
+	// which silently defeats the same-name merge. This is exactly the kind
+	// of mismatch RemoteBasename/LocalDirBasename (printed with %q by
+	// `sync-downloads --dry-run`) is meant to surface.
+	t.Run("visually identical but byte-different basenames: no merge", func(t *testing.T) {
+		if err := os.Mkdir(filepath.Join(libRoot, "Black Torch – AniLiberty"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		tr := qbt.Torrent{
+			Name:        "Black Torch - AniLiberty [WEBRip 1080p HEVC]",
+			SavePath:    "/downloads/Black Torch – AniLiberty",                          // en dash
+			ContentPath: "/downloads/Black Torch – AniLiberty/Black Torch - AniLiberty", // hyphen
+		}
+		plan := PlanSync(tr, "/downloads", "", libRoot, allSeries)
+		if !plan.OK {
+			t.Fatalf("PlanSync() = %+v, want OK", plan)
+		}
+		if plan.WouldMergeIntoDir {
+			t.Fatalf("PlanSync() = %+v, want !WouldMergeIntoDir (basenames differ by dash character despite looking identical)", plan)
+		}
+		if plan.RemoteBasename == plan.LocalDirBasename {
+			t.Fatalf("RemoteBasename and LocalDirBasename should differ: %q vs %q", plan.RemoteBasename, plan.LocalDirBasename)
 		}
 	})
 }

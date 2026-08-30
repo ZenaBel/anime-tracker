@@ -5,6 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"anime-tracker/internal/db"
 	"anime-tracker/internal/qbt"
 	"anime-tracker/internal/remote"
 	"anime-tracker/internal/settings"
@@ -51,8 +52,31 @@ var syncDownloadsCmd = &cobra.Command{
 				fmt.Printf("nothing finished yet (%d still downloading)\n", pending)
 				return nil
 			}
+
+			containerRoot, _, err := store.GetSetting(ctx, "remote.root")
+			if err != nil {
+				return err
+			}
+			hostRoot, _, err := store.GetSetting(ctx, "remote.host_root")
+			if err != nil {
+				return err
+			}
+			allSeries, err := store.ListSeriesWithProgress(ctx, db.SortAlphaAsc)
+			if err != nil {
+				return err
+			}
+
 			for _, t := range completed {
-				fmt.Printf("would sync: %s (%s)\n", t.Name, t.ContentPath)
+				fmt.Printf("would sync: %s\n", t.Name)
+				fmt.Printf("  save_path=%q content_path=%q\n", t.SavePath, t.ContentPath)
+				plan := remote.PlanSync(t, containerRoot, hostRoot, cfg.Dir, allSeries)
+				if !plan.OK {
+					fmt.Printf("  -> could not resolve a series for this torrent\n")
+					continue
+				}
+				fmt.Printf("  -> series=%q local_dir=%q fetch_path=%q\n", plan.SeriesName, plan.LocalDir, plan.RemoteFetchPath)
+				fmt.Printf("  -> rsync source basename=%q vs local dir basename=%q -> merge into local dir (no nesting)=%v\n",
+					plan.RemoteBasename, plan.LocalDirBasename, plan.WouldMergeIntoDir)
 			}
 			fmt.Printf("%d finished, %d still downloading (dry run — nothing changed)\n", len(completed), pending)
 			return nil

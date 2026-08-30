@@ -343,6 +343,49 @@ func resolveSeriesNameForSync(savePath, containerRoot, torrentName string, allSe
 	return path.Base(savePath), true
 }
 
+// SyncPlan is what SyncDownloads would do with one completed torrent,
+// computed without touching the network or filesystem — for
+// troubleshooting and `sync-downloads --dry-run`. Two folder names that
+// look identical in a terminal can still differ byte-for-byte (stray
+// whitespace, differing Unicode normalization of the same accented/CJK
+// character, a lookalike bracket) — which is exactly what
+// WouldMergeIntoLocalDir depends on — so callers should print
+// RemoteBasename/LocalDirBasename with a quoting verb (e.g. %q) rather
+// than as plain text to actually see such a difference.
+type SyncPlan struct {
+	SeriesName        string
+	LocalDir          string
+	RemoteFetchPath   string // ContentPath after remapPath
+	RemoteBasename    string // path.Base(RemoteFetchPath) — what buildRsyncArgs compares
+	LocalDirBasename  string // filepath.Base(LocalDir) — what buildRsyncArgs compares
+	WouldMergeIntoDir bool   // whether buildRsyncArgs would add the trailing slash
+	OK                bool   // false if no series could be resolved at all
+}
+
+// PlanSync computes SyncPlan for one completed torrent.
+func PlanSync(t qbt.Torrent, containerRoot, hostRoot, libraryRoot string, allSeries []db.SeriesProgress) SyncPlan {
+	seriesName, ok := resolveSeriesNameForSync(t.SavePath, containerRoot, t.Name, allSeries)
+	if !ok {
+		return SyncPlan{}
+	}
+	localDir, _, err := ResolveLocalSeriesDir(libraryRoot, seriesName)
+	if err != nil {
+		return SyncPlan{SeriesName: seriesName}
+	}
+	remotePath := remapPath(t.ContentPath, containerRoot, hostRoot)
+	remoteBasename := path.Base(remotePath)
+	localDirBasename := filepath.Base(strings.TrimRight(localDir, string(filepath.Separator)))
+	return SyncPlan{
+		SeriesName:        seriesName,
+		LocalDir:          localDir,
+		RemoteFetchPath:   remotePath,
+		RemoteBasename:    remoteBasename,
+		LocalDirBasename:  localDirBasename,
+		WouldMergeIntoDir: remoteBasename == localDirBasename,
+		OK:                true,
+	}
+}
+
 // SyncResult summarizes one SyncDownloads call.
 type SyncResult struct {
 	Synced     []string // torrent names successfully pulled in
