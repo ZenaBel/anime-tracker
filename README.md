@@ -153,8 +153,9 @@ anime-tracker config set qbt.url https://seedbox.example.com:8080
 anime-tracker config set qbt.username <your qBittorrent WebUI username>
 anime-tracker config set qbt.password        # prompts, hidden input
 anime-tracker config set remote.ssh_target <user>@seedbox.example.com   # or an ~/.ssh/config alias
-anime-tracker config set remote.root /path/on/the/remote/disk           # mirrors the local library root, one folder per series
+anime-tracker config set remote.root /path/on/the/remote/disk           # where torrents anime-tracker submits are saved
 anime-tracker config set qbt.insecure_tls true   # only if the WebUI uses a self-signed cert
+anime-tracker config set remote.download_subfolder true   # optional, see below — off (flat) by default
 ```
 
 Or do the same from the TUI: `c` opens a settings overlay listing all
@@ -187,7 +188,18 @@ path that doesn't match what you see over SSH.
 **`anime-tracker download <series-query> <magnet-or-torrent-url>`** fuzzy-
 resolves the series (same matching as `play`/`watch`), then tells the
 remote qBittorrent to grab the given magnet link or `.torrent` URL, saved
-to `<remote.root>/<Series Title>` and tagged `anime-tracker`.
+to `remote.root` itself and tagged `anime-tracker`. By default no
+per-series subfolder is added on the remote side — most release groups'
+torrents already wrap their own files in a folder named after the release
+(which for a tracked show is typically the series title itself), so adding
+`<remote.root>/<Series Title>` on top used to leave a completed torrent
+nested two folders deep locally (one layer from the save path, one already
+inside the torrent) until `sync-downloads`' flattening cleaned it up —
+correctly, but wastefully re-fetching the episode into that stray folder
+every run in the meantime. Set `remote.download_subfolder true` to opt
+back into the old `<remote.root>/<Series Title>` layout (e.g. if your
+releases don't already wrap their files in a folder and you'd rather keep
+the remote disk organized by series too).
 
 **RSS**: anime-tracker doesn't fetch or parse RSS feeds itself — subscribe
 to feed URLs in qBittorrent's own WebUI (its RSS tab) as usual, and
@@ -210,16 +222,17 @@ anime-tracker reads what it's already fetched:
   as `/` search), `enter` again downloads, `esc` steps back one level at a
   time.
 
-Either way this ends up exactly like `download`: saved to
-`<remote.root>/<Series Title>` and tagged `anime-tracker`, so `sync-downloads`
-picks it up the same way regardless of which path added it. qBittorrent's
-own RSS **Auto Downloading** rules work too, as a hands-off alternative to
-picking articles yourself — point a rule's save path at
+Either way this ends up exactly like `download`: saved to `remote.root`
+(flat, unless `remote.download_subfolder true`) and tagged
+`anime-tracker`, so `sync-downloads` picks it up the same way regardless
+of which path added it. qBittorrent's own RSS **Auto Downloading** rules
+work too, as a hands-off alternative to picking articles yourself — either
+leave a rule's save path on qBittorrent's default (flat under
+`remote.root`) and just add the tag `anime-tracker`, or point it at
 `<remote.root>/<Series Folder Name>` (matching a local series folder name
-exactly, case-insensitively) and add the tag `anime-tracker` to it, and
-`sync-downloads` picks up whatever it grabs the same way. A brand-new show
-with no matching local folder yet is fine either way; `sync-downloads`
-creates the folder on first sync.
+exactly, case-insensitively) for a per-series subfolder — `sync-downloads`
+handles both the same way. A brand-new show with no matching local folder
+yet is fine either way; `sync-downloads` creates the folder on first sync.
 
 **`anime-tracker sync-downloads`** looks up every `anime-tracker`-tagged
 torrent, and for each one that's finished (`progress >= 1.0`, regardless of
@@ -243,22 +256,27 @@ network or filesystem. `S` in the TUI runs the same thing (no `--dry-run`
 there) and refreshes the series/episode panes right away if anything came
 in.
 
-**Which local folder a synced torrent lands in** normally comes from its
-save path's last segment — the `<remote.root>/<Series>` convention
-`download`/`rss-download` always follow, and a properly configured
-Auto Downloading rule does too. A torrent saved with *no* per-series
-subfolder at all (save path exactly equal to `remote.root` — a rule left
-on qBittorrent's plain default save location, with no per-rule override)
-has no folder segment to read a series from; rather than dumping it into
-one shared local folder literally named after `remote.root`'s own last
-segment (e.g. everything piling into a local `downloads/`), `sync-downloads`
-instead guesses the series from the torrent's own name — the same
-name-contains-series-title check `rss-download`'s auto-guess uses — matched
-only against series you already track locally. If nothing matches, that
-torrent is reported as failed with an explicit reason instead of being
-silently misplaced; fix it either by giving that rule its own save path
-(`<remote.root>/<Series Folder Name>`) or by tracking the series locally
-first, then re-run `sync-downloads`.
+**Which local folder a synced torrent lands in**: if its save path has a
+per-series subfolder (`<remote.root>/<Series>` — from a rule with a
+per-rule override, or `download`/`rss-download` with
+`remote.download_subfolder true`), that segment is used directly. A
+torrent saved flat (save path exactly equal to `remote.root` — the default
+for `download`/`rss-download` now, and for any Auto Downloading rule left
+on qBittorrent's plain default save location) has no folder segment to
+read a series from; rather than dumping it into one shared local folder
+literally named after `remote.root`'s own last segment (e.g. everything
+piling into a local `downloads/`), `sync-downloads` instead guesses the
+series from the torrent's own name — the same name-contains-series-title
+check `rss-download`'s auto-guess uses — matched only against series you
+already track locally. If nothing matches, that torrent is reported as
+failed with an explicit reason instead of being silently misplaced; fix it
+either by tracking the series locally first, or by giving that rule its
+own save path (`<remote.root>/<Series Folder Name>`), then re-run
+`sync-downloads`. `sync-downloads --dry-run` prints, per torrent, the
+resolved series/local folder and whether rsync would merge cleanly or
+nest — handy for troubleshooting a mismatch (two folder names can look
+identical while differing byte-for-byte — stray whitespace, a Unicode
+dash instead of a hyphen — which the `%q`-quoted output reveals).
 
 While a file's actually transferring, both show live progress read from
 rsync's own output — a `%d%%` figure plus transfer rate, updated on every

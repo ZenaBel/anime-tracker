@@ -13,6 +13,7 @@ var Keys = []string{
 	"remote.ssh_target",
 	"remote.root",
 	"remote.host_root",
+	"remote.download_subfolder",
 }
 
 // PasswordKey never gets its stored value shown or pre-filled for editing.
