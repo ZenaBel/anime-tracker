@@ -63,6 +63,19 @@ func TestParseRsyncProgress(t *testing.T) {
 		{"non-progress line: file list header", "receiving incremental file list", false, 0, ""},
 		{"non-progress line: blank", "", false, 0, ""},
 		{"non-progress line: summary footer", "sent 8 bytes  received 8 bytes  32.00 bytes/sec", false, 0, ""},
+		{
+			// Regression: real repro on a uk_UA-locale machine — period as
+			// thousands separator, comma as decimal point — where rsync
+			// itself (not anime-tracker) formats the line this way.
+			"locale-formatted line (period thousands, comma decimal)",
+			"   32.768.800  45%   12,34MB/s    0:00:12 (xfr#1, to-chk=0/1)",
+			true, 45, "12,34MB/s",
+		},
+		{
+			"locale-formatted line, byte count small enough to have no separator yet",
+			"          0   0%    0,00kB/s    0:00:00",
+			true, 0, "0,00kB/s",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

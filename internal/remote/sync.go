@@ -67,7 +67,17 @@ type FetchProgress struct {
 // progressLineRe matches an --info=progress2 line, e.g.:
 //
 //	1,234,567  45%   12.34MB/s    0:00:12 (xfr#1, to-chk=0/1)
-var progressLineRe = regexp.MustCompile(`^\s*[\d,]+\s+(\d{1,3})%\s+(\S+/s)`)
+//
+// The leading byte count is matched as a bare \S+ rather than [\d,]+: rsync
+// formats it (and the rate's decimal point) according to the system
+// locale, so on a machine using e.g. uk_UA — period as thousands
+// separator, comma as decimal point — a real line reads
+// "32.768.800  45%   12,34MB/s ...". [\d,]+ stopped matching the moment
+// the byte count grew past the first period, which is every update after
+// the very first, silently dropping the whole line — which is what "stuck
+// at 0% (0,00kB/s)" turned out to actually be (the only line small enough
+// to have no grouping separator yet).
+var progressLineRe = regexp.MustCompile(`^\s*\S+\s+(\d{1,3})%\s+(\S+/s)`)
 
 func parseRsyncProgress(line string) (FetchProgress, bool) {
 	m := progressLineRe.FindStringSubmatch(line)
