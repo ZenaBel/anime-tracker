@@ -218,8 +218,10 @@ anime-tracker reads what it's already fetched:
   `enter` on an article downloads it immediately (no confirmation step —
   save path is always flat, so there's nothing to pick) and marks it read;
   `space` marks the selected article read without downloading it (already-
-  read articles render dimmed, same as qBittorrent's own RSS reader);
-  `esc` closes.
+  read articles render dimmed, same as qBittorrent's own RSS reader). On
+  the feeds pane (left side), `space` instead marks the whole selected
+  feed read in one go — including the synthetic "Unread" entry, which
+  marks every feed with unread articles read at once. `esc` closes.
 
 Either way this ends up exactly like `download`: saved to `remote.root`
 (flat) and tagged `anime-tracker`, so `sync-downloads` picks it up the

@@ -188,6 +188,22 @@ func (c *Client) MarkRSSArticleRead(ctx context.Context, feedName, articleID str
 	return nil
 }
 
+// MarkRSSFeedRead marks every article in feedName as read in one call — the
+// same as MarkRSSArticleRead but with articleId omitted entirely, which
+// qBittorrent takes to mean "the whole feed" (verified against a real
+// instance: unread count dropped from 26 to 0 in one request).
+func (c *Client) MarkRSSFeedRead(ctx context.Context, feedName string) error {
+	form := url.Values{"itemPath": {feedName}}
+	body, status, err := c.post(ctx, "/api/v2/rss/markAsRead", form)
+	if err != nil {
+		return fmt.Errorf("marking RSS feed read: %w", err)
+	}
+	if status != http.StatusOK {
+		return fmt.Errorf("marking RSS feed read: unexpected status %d: %s", status, strings.TrimSpace(body))
+	}
+	return nil
+}
+
 func (c *Client) post(ctx context.Context, path string, form url.Values) (body string, status int, err error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, strings.NewReader(form.Encode()))
 	if err != nil {

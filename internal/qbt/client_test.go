@@ -255,6 +255,35 @@ func TestMarkRSSArticleRead_ErrorStatus(t *testing.T) {
 	}
 }
 
+// Regression test: verified against a real qBittorrent instance that
+// omitting articleId entirely (not sending it as an empty string — just
+// not present in the form at all) is what marks the *whole feed* read in
+// one call (confirmed by re-fetching /rss/items: unread count went from
+// 26 to 0).
+func TestMarkRSSFeedRead(t *testing.T) {
+	var gotItemPath string
+	var hasArticleID bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatal(err)
+		}
+		gotItemPath = r.FormValue("itemPath")
+		_, hasArticleID = r.Form["articleId"]
+	}))
+	defer srv.Close()
+
+	c, _ := New(srv.URL, false)
+	if err := c.MarkRSSFeedRead(context.Background(), "AniLiberty"); err != nil {
+		t.Fatalf("MarkRSSFeedRead() error = %v", err)
+	}
+	if gotItemPath != "AniLiberty" {
+		t.Fatalf("itemPath = %q, want AniLiberty", gotItemPath)
+	}
+	if hasArticleID {
+		t.Fatal("articleId must not be sent at all when marking a whole feed read")
+	}
+}
+
 func TestListTorrents_ErrorStatus(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)

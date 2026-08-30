@@ -635,19 +635,31 @@ func (m Model) handleRSSKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, submitRSSDownloadCmd(m.store, article)
 
 	case " ":
-		if m.rss.focus != rssFocusArticles {
-			return m, nil
+		switch m.rss.focus {
+		case rssFocusArticles:
+			arts := m.rss.currentArticles()
+			if m.rss.articleIdx < 0 || m.rss.articleIdx >= len(arts) {
+				return m, nil
+			}
+			article := arts[m.rss.articleIdx]
+			if article.IsRead {
+				return m, nil
+			}
+			m.rss.markArticleRead(article.ID)
+			return m, markRSSArticleReadCmd(m.store, article.FeedName, article.ID)
+
+		case rssFocusFeeds:
+			if m.rss.feedIdx < 0 || m.rss.feedIdx >= len(m.rss.feeds) {
+				return m, nil
+			}
+			names := distinctUnreadFeedNames(m.rss.feeds[m.rss.feedIdx].Articles)
+			if len(names) == 0 {
+				return m, nil
+			}
+			m.rss.markGroupRead(m.rss.feedIdx)
+			return m, markRSSFeedsReadCmd(m.store, names)
 		}
-		arts := m.rss.currentArticles()
-		if m.rss.articleIdx < 0 || m.rss.articleIdx >= len(arts) {
-			return m, nil
-		}
-		article := arts[m.rss.articleIdx]
-		if article.IsRead {
-			return m, nil
-		}
-		m.rss.markArticleRead(article.ID)
-		return m, markRSSArticleReadCmd(m.store, article.FeedName, article.ID)
+		return m, nil
 	}
 	return m, nil
 }

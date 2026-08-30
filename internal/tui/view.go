@@ -348,7 +348,7 @@ func (m Model) viewRSS() string {
 	if m.rss.loading {
 		footer.WriteString(helpStyle.Render("loading..."))
 	} else {
-		footer.WriteString(helpStyle.Render("↑/↓ or j/k: move  ←/→ or h/l: switch pane  enter: open/download  space: mark read  esc: close"))
+		footer.WriteString(helpStyle.Render("↑/↓ or j/k: move  ←/→ or h/l: switch pane  enter: open/download  space: mark read (whole feed on the feeds pane)  esc: close"))
 	}
 	if m.rss.submitting {
 		footer.WriteString("\n")

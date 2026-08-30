@@ -48,6 +48,56 @@ func TestRssState_MarkArticleRead(t *testing.T) {
 	}
 }
 
+// TestRssState_MarkGroupRead covers the "mark the whole feed read" action
+// (space on the feeds pane) for the synthetic "Unread" aggregate, which
+// spans two different real feeds — marking it must flip every article in
+// both real feeds' own groups too, not just the ones physically present
+// under the "Unread" entry.
+func TestRssState_MarkGroupRead(t *testing.T) {
+	a1 := qbt.RSSArticle{ID: "a1", FeedName: "FeedA"}
+	a2 := qbt.RSSArticle{ID: "a2", FeedName: "FeedB"}
+	alreadyRead := qbt.RSSArticle{ID: "a3", FeedName: "FeedA", IsRead: true}
+	r := rssState{
+		feeds: []rssFeedGroup{
+			{Name: "Unread", Unread: 2, Articles: []qbt.RSSArticle{a1, a2}},
+			{Name: "FeedA", Unread: 1, Articles: []qbt.RSSArticle{a1, alreadyRead}},
+			{Name: "FeedB", Unread: 1, Articles: []qbt.RSSArticle{a2}},
+		},
+	}
+
+	r.markGroupRead(0) // the "Unread" aggregate
+
+	for gi, g := range r.feeds {
+		if g.Unread != 0 {
+			t.Errorf("group %d (%s) Unread = %d, want 0", gi, g.Name, g.Unread)
+		}
+		for ai, a := range g.Articles {
+			if !a.IsRead {
+				t.Errorf("group %d (%s) article %d (%s): expected read", gi, g.Name, ai, a.ID)
+			}
+		}
+	}
+}
+
+func TestDistinctUnreadFeedNames(t *testing.T) {
+	articles := []qbt.RSSArticle{
+		{ID: "a1", FeedName: "FeedA"},
+		{ID: "a2", FeedName: "FeedB"},
+		{ID: "a3", FeedName: "FeedA"},               // duplicate feed name
+		{ID: "a4", FeedName: "FeedC", IsRead: true}, // already read: excluded
+	}
+	got := distinctUnreadFeedNames(articles)
+	want := []string{"FeedA", "FeedB"}
+	if len(got) != len(want) {
+		t.Fatalf("distinctUnreadFeedNames() = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("distinctUnreadFeedNames() = %v, want %v", got, want)
+		}
+	}
+}
+
 func TestIndexByID(t *testing.T) {
 	items := []db.Episode{{ID: 10}, {ID: 20}, {ID: 30}}
 	keyFn := func(e db.Episode) int64 { return e.ID }

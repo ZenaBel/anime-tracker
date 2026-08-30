@@ -164,6 +164,43 @@ func (r *rssState) markArticleRead(articleID string) {
 	}
 }
 
+// markGroupRead marks every currently-unread article in feeds[groupIdx] as
+// read, cascading to every other group's own copy of the same articles
+// (see markArticleRead) — used for the feeds pane's "mark this whole
+// feed/Unread read" action.
+func (r *rssState) markGroupRead(groupIdx int) {
+	if groupIdx < 0 || groupIdx >= len(r.feeds) {
+		return
+	}
+	var ids []string
+	for _, a := range r.feeds[groupIdx].Articles {
+		if !a.IsRead {
+			ids = append(ids, a.ID)
+		}
+	}
+	for _, id := range ids {
+		r.markArticleRead(id)
+	}
+}
+
+// distinctUnreadFeedNames returns the unique RSSArticle.FeedName values
+// among articles' currently-unread ones — the real qBittorrent feeds that
+// actually need a MarkRSSFeedRead call. For a single real feed's group
+// this is just that one name; for the synthetic "Unread" aggregate it can
+// be several, since it spans every subscribed feed.
+func distinctUnreadFeedNames(articles []qbt.RSSArticle) []string {
+	seen := make(map[string]bool)
+	var names []string
+	for _, a := range articles {
+		if a.IsRead || seen[a.FeedName] {
+			continue
+		}
+		seen[a.FeedName] = true
+		names = append(names, a.FeedName)
+	}
+	return names
+}
+
 // manageKind identifies which rename/delete overlay (if any) is active.
 type manageKind int
 
@@ -334,6 +371,25 @@ func markRSSArticleReadCmd(store *db.Store, feedName, articleID string) tea.Cmd 
 			return rssMarkReadDoneMsg{err: err}
 		}
 		return rssMarkReadDoneMsg{err: client.MarkRSSArticleRead(ctx, feedName, articleID)}
+	}
+}
+
+// markRSSFeedsReadCmd marks every one of feedNames fully read (space key
+// on the feeds pane) — one MarkRSSFeedRead call per real feed involved,
+// stopping at the first failure.
+func markRSSFeedsReadCmd(store *db.Store, feedNames []string) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+		client, err := settings.Connect(ctx, store)
+		if err != nil {
+			return rssMarkReadDoneMsg{err: err}
+		}
+		for _, name := range feedNames {
+			if err := client.MarkRSSFeedRead(ctx, name); err != nil {
+				return rssMarkReadDoneMsg{err: err}
+			}
+		}
+		return rssMarkReadDoneMsg{}
 	}
 }
 
