@@ -44,35 +44,41 @@ func truncate(s string, n int) string {
 	return string(r[:n-1]) + "…"
 }
 
-// scrollHoldTicks is how many ticks scrollingText pauses at the start of
-// each lap before sliding, so a freshly-selected row is readable from its
-// beginning rather than starting mid-scroll.
-const scrollHoldTicks = 4
+// scrollHoldTicks is how many ticks scrollingText pauses at each end (the
+// start, and again once the tail is fully revealed) before continuing —
+// long enough to actually read that end before it moves on.
+const scrollHoldTicks = 8
 
 // scrollingText renders s within n runes: if it already fits, or the row
 // isn't selected, it's just truncate()'d as usual. Otherwise — the
-// selected row's content is too wide for its column — it holds at the
-// start for scrollHoldTicks so the beginning is readable, then slides a
-// window over the full text as tick advances, looping back to the held
-// start once it reaches the end, so the whole value becomes readable over
-// time without disturbing the rest of the (static) list.
+// selected row's content is too wide for its column — it bounces: hold at
+// the start, slide forward until the tail is fully visible, hold there,
+// then slide back to the start and repeat. Every frame is a real
+// contiguous substring of s (no wraparound splice/separator), which reads
+// far more naturally than a looping ticker for short list rows.
 func scrollingText(s string, n int, selected bool, tick int) string {
 	r := []rune(s)
 	if !selected || len(r) <= n || n <= 1 {
 		return truncate(s, n)
 	}
 
-	full := []rune(s + "   ")
-	total := len(full)
-	cycle := total + scrollHoldTicks
+	extra := len(r) - n // how many positions it takes to reveal the tail
+	cycle := 2*scrollHoldTicks + 2*extra
 	phase := tick % cycle
-	pos := 0
-	if phase >= scrollHoldTicks {
+
+	var pos int
+	switch {
+	case phase < scrollHoldTicks: // hold at start
+		pos = 0
+	case phase < scrollHoldTicks+extra: // slide forward to the tail
 		pos = phase - scrollHoldTicks
+	case phase < 2*scrollHoldTicks+extra: // hold at the tail
+		pos = extra
+	default: // slide back to the start
+		pos = extra - (phase - (2*scrollHoldTicks + extra))
 	}
 
-	doubled := append(append([]rune{}, full...), full...)
-	return string(doubled[pos : pos+n])
+	return string(r[pos : pos+n])
 }
 
 // nonListRows is how many lines the layout spends on things that aren't

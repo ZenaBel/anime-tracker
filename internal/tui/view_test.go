@@ -3,7 +3,7 @@ package tui
 import "testing"
 
 func TestScrollingText(t *testing.T) {
-	s := "Hello World" // 11 runes
+	s := "Hello World" // 11 runes, extra = 11-5 = 6 positions to reveal the tail
 
 	if got := scrollingText(s, 20, true, 0); got != s {
 		t.Errorf("fits within width: got %q, want %q", got, s)
@@ -11,21 +11,28 @@ func TestScrollingText(t *testing.T) {
 	if got := scrollingText(s, 5, false, 0); got != truncate(s, 5) {
 		t.Errorf("unselected overflow: got %q, want truncate()'d %q", got, truncate(s, 5))
 	}
+
+	// Holds at the start for scrollHoldTicks.
 	if got := scrollingText(s, 5, true, 0); got != "Hello" {
 		t.Errorf("selected, tick 0: got %q, want %q (holding at start)", got, "Hello")
 	}
 	if got := scrollingText(s, 5, true, scrollHoldTicks-1); got != "Hello" {
-		t.Errorf("selected, still within hold: got %q, want %q", got, "Hello")
-	}
-	if got := scrollingText(s, 5, true, scrollHoldTicks+1); got == "Hello" {
-		t.Errorf("selected, past hold: expected the window to have advanced past %q, got %q", "Hello", got)
+		t.Errorf("selected, still within start hold: got %q, want %q", got, "Hello")
 	}
 
-	// full = "Hello World   " (14 runes); after one full lap (scrollHoldTicks
-	// hold ticks + 14 scroll ticks) it must land back on the held start.
-	full := len([]rune(s + "   "))
-	if got := scrollingText(s, 5, true, scrollHoldTicks+full); got != "Hello" {
-		t.Errorf("selected, one full lap later: got %q, want %q (wrapped back to start)", got, "Hello")
+	// Slides forward to fully reveal the tail, and holds there too — every
+	// frame along the way must be a real contiguous substring of s.
+	if got := scrollingText(s, 5, true, scrollHoldTicks+6); got != "World" {
+		t.Errorf("selected, tail fully revealed: got %q, want %q", got, "World")
+	}
+	if got := scrollingText(s, 5, true, 2*scrollHoldTicks+6-1); got != "World" {
+		t.Errorf("selected, still within tail hold: got %q, want %q", got, "World")
+	}
+
+	// Slides back and, after one full lap, lands on the held start again.
+	cycle := 2*scrollHoldTicks + 2*6
+	if got := scrollingText(s, 5, true, cycle); got != "Hello" {
+		t.Errorf("selected, one full lap later: got %q, want %q (back at start)", got, "Hello")
 	}
 }
 
