@@ -65,6 +65,24 @@ type Model struct {
 	settingsInput   string
 
 	rss rssState
+
+	// scrollTick advances on every scrollTickMsg (see scrollTickCmd) and
+	// drives the scrolling-text animation for whichever row is currently
+	// selected, when its content is too wide for its column.
+	scrollTick int
+}
+
+// scrollTickInterval controls how often the selected row's scrolling-text
+// animation advances (see scrollingText in view.go).
+const scrollTickInterval = 200 * time.Millisecond
+
+// scrollTickMsg drives the scrolling-text animation; it's scheduled
+// continuously for the life of the program (see Init/Update), independent
+// of whichever overlay happens to be active.
+type scrollTickMsg struct{}
+
+func scrollTickCmd() tea.Cmd {
+	return tea.Tick(scrollTickInterval, func(time.Time) tea.Msg { return scrollTickMsg{} })
 }
 
 // rssFocus is which of the RSS overlay's two panes has focus,
@@ -225,7 +243,7 @@ func NewModel(store *db.Store, rootDir string) Model {
 }
 
 func (m Model) Init() tea.Cmd {
-	return loadSeriesCmd(m.store, m.sortMode)
+	return tea.Batch(loadSeriesCmd(m.store, m.sortMode), scrollTickCmd())
 }
 
 func (m Model) selectedSeries() (db.SeriesProgress, bool) {

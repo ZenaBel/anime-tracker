@@ -17,6 +17,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 		return m, nil
 
+	case scrollTickMsg:
+		m.scrollTick++
+		return m, scrollTickCmd()
+
 	case tea.KeyMsg:
 		if m.searchActive {
 			return m.handleSearchKey(msg)

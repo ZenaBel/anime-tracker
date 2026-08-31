@@ -44,6 +44,37 @@ func truncate(s string, n int) string {
 	return string(r[:n-1]) + "…"
 }
 
+// scrollHoldTicks is how many ticks scrollingText pauses at the start of
+// each lap before sliding, so a freshly-selected row is readable from its
+// beginning rather than starting mid-scroll.
+const scrollHoldTicks = 4
+
+// scrollingText renders s within n runes: if it already fits, or the row
+// isn't selected, it's just truncate()'d as usual. Otherwise — the
+// selected row's content is too wide for its column — it holds at the
+// start for scrollHoldTicks so the beginning is readable, then slides a
+// window over the full text as tick advances, looping back to the held
+// start once it reaches the end, so the whole value becomes readable over
+// time without disturbing the rest of the (static) list.
+func scrollingText(s string, n int, selected bool, tick int) string {
+	r := []rune(s)
+	if !selected || len(r) <= n || n <= 1 {
+		return truncate(s, n)
+	}
+
+	full := []rune(s + "   ")
+	total := len(full)
+	cycle := total + scrollHoldTicks
+	phase := tick % cycle
+	pos := 0
+	if phase >= scrollHoldTicks {
+		pos = phase - scrollHoldTicks
+	}
+
+	doubled := append(append([]rune{}, full...), full...)
+	return string(doubled[pos : pos+n])
+}
+
 // nonListRows is how many lines the layout spends on things that aren't
 // list rows: pane title + blank line (2), the blank separator and up to
 // two footer lines (help + status/error) below the panes (3), and up to
@@ -136,7 +167,8 @@ func (m Model) viewSeriesPane() string {
 	}
 	for i := start; i < end; i++ {
 		s := m.series[i]
-		line := fmt.Sprintf("%s %-18s %3d/%-3d", progressBar(s.Watched, s.Total), truncate(s.Title, 18), s.Watched, s.Total)
+		title := scrollingText(s.Title, 18, i == m.seriesIdx, m.scrollTick)
+		line := fmt.Sprintf("%s %-18s %3d/%-3d", progressBar(s.Watched, s.Total), title, s.Watched, s.Total)
 		if i == m.seriesIdx {
 			line = selectedStyle.Render("> " + line)
 		} else {
@@ -187,7 +219,7 @@ func (m Model) viewEpisodesPane() string {
 		if nameWidth < 10 {
 			nameWidth = 10
 		}
-		line := fmt.Sprintf("%s%s %s", statusicon.Icon(ep.Status), extra, truncate(ep.FileName, nameWidth))
+		line := fmt.Sprintf("%s%s %s", statusicon.Icon(ep.Status), extra, scrollingText(ep.FileName, nameWidth, i == m.episodeIdx, m.scrollTick))
 		if i == m.episodeIdx {
 			line = selectedStyle.Render("> " + line)
 		} else {
@@ -229,7 +261,7 @@ func (m Model) viewSearch() string {
 		b.WriteString("\n")
 	}
 	for i := start; i < end; i++ {
-		line := formatSearchResult(m.searchResults[i])
+		line := formatSearchResult(m.searchResults[i], i == m.searchIdx, m.scrollTick)
 		if i == m.searchIdx {
 			line = selectedStyle.Render("> " + line)
 		} else {
@@ -386,7 +418,7 @@ func (m Model) viewRSSFeedsPane() string {
 	}
 	for i := start; i < end; i++ {
 		f := m.rss.feeds[i]
-		line := fmt.Sprintf("%-20s (%d)", truncate(f.Name, 20), f.Unread)
+		line := fmt.Sprintf("%-20s (%d)", scrollingText(f.Name, 20, i == m.rss.feedIdx, m.scrollTick), f.Unread)
 		if i == m.rss.feedIdx {
 			line = selectedStyle.Render("> " + line)
 		} else {
@@ -428,7 +460,7 @@ func (m Model) viewRSSArticlesPane() string {
 	}
 	for i := start; i < end; i++ {
 		a := articles[i]
-		title := truncate(a.Title, rightPaneWidth-4)
+		title := scrollingText(a.Title, rightPaneWidth-4, i == m.rss.articleIdx, m.scrollTick)
 		switch {
 		case i == m.rss.articleIdx:
 			b.WriteString(selectedStyle.Render("> " + title))
@@ -447,11 +479,11 @@ func (m Model) viewRSSArticlesPane() string {
 	return rightPaneStyle.Render(b.String())
 }
 
-func formatSearchResult(r search.Result) string {
+func formatSearchResult(r search.Result, selected bool, tick int) string {
 	if r.Kind == search.KindSeries {
-		return fmt.Sprintf("[series]  %-40s %3d/%-3d", truncate(r.Series.Title, 40), r.Series.Watched, r.Series.Total)
+		return fmt.Sprintf("[series]  %-40s %3d/%-3d", scrollingText(r.Series.Title, 40, selected, tick), r.Series.Watched, r.Series.Total)
 	}
-	return fmt.Sprintf("[episode] %s %-25s %s", statusicon.Icon(r.Episode.Status), truncate(r.Series.Title, 25), truncate(r.Episode.FileName, 55))
+	return fmt.Sprintf("[episode] %s %-25s %s", statusicon.Icon(r.Episode.Status), truncate(r.Series.Title, 25), scrollingText(r.Episode.FileName, 55, selected, tick))
 }
 
 func progressBar(watched, total int) string {
