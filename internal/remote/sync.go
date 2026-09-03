@@ -327,20 +327,36 @@ func remapPath(rpath, containerRoot, hostRoot string) string {
 // subfolder at all — save path equal to containerRoot exactly, e.g. a rule
 // left on qBittorrent's plain default save location — that "segment"
 // would just be containerRoot's own folder name (e.g. everything piling
-// into one shared local "downloads" folder instead of one per series).
-// In that degenerate case, the series is guessed from the torrent's own
-// name instead (see search.GuessSeriesForTitle), matched only against
-// series already tracked locally. ok is false if neither approach can
-// determine one.
-func resolveSeriesNameForSync(savePath, containerRoot, torrentName string, allSeries []db.SeriesProgress) (string, bool) {
-	if containerRoot != "" && strings.TrimRight(savePath, "/") == strings.TrimRight(containerRoot, "/") {
-		guess, ok := search.GuessSeriesForTitle(allSeries, torrentName)
-		if !ok {
-			return "", false
-		}
+// into one shared local "downloads" folder instead of one per series). In
+// that degenerate case, the series is first guessed from the torrent's own
+// name (see search.GuessSeriesForTitle), matched only against series
+// already tracked locally — this takes priority so an existing show keeps
+// landing in its existing folder even if this particular release's name
+// varies slightly. Failing that, qBittorrent's own per-torrent content
+// subfolder is used instead: when it downloads a multi-file release (the
+// common case for anime — video + subs/nfo) it creates
+// "<containerRoot>/<release name>/" on its own regardless of the save-path
+// rule, and that release name is exactly the well-formed
+// "<Title> - <Group> [<Quality>]" folder name the rest of this app already
+// uses — good enough to seed a brand-new series with, no local match
+// required. That fallback only fires when content actually sits one level
+// below containerRoot in a real subfolder (an extensionless basename); a
+// bare flat file (savePath == containerRoot and contentPath is the file
+// itself, no subfolder) gives no usable name and falls through to failure.
+// ok is false if none of these can determine one.
+func resolveSeriesNameForSync(savePath, contentPath, containerRoot, torrentName string, allSeries []db.SeriesProgress) (string, bool) {
+	if containerRoot == "" || strings.TrimRight(savePath, "/") != strings.TrimRight(containerRoot, "/") {
+		return path.Base(savePath), true
+	}
+	if guess, ok := search.GuessSeriesForTitle(allSeries, torrentName); ok {
 		return guess.Title, true
 	}
-	return path.Base(savePath), true
+	if path.Dir(contentPath) == strings.TrimRight(containerRoot, "/") {
+		if base := path.Base(contentPath); base != "" && base != "." && base != "/" && path.Ext(base) == "" {
+			return base, true
+		}
+	}
+	return "", false
 }
 
 // SyncPlan is what SyncDownloads would do with one completed torrent,
@@ -364,7 +380,7 @@ type SyncPlan struct {
 
 // PlanSync computes SyncPlan for one completed torrent.
 func PlanSync(t qbt.Torrent, containerRoot, hostRoot, libraryRoot string, allSeries []db.SeriesProgress) SyncPlan {
-	seriesName, ok := resolveSeriesNameForSync(t.SavePath, containerRoot, t.Name, allSeries)
+	seriesName, ok := resolveSeriesNameForSync(t.SavePath, t.ContentPath, containerRoot, t.Name, allSeries)
 	if !ok {
 		return SyncPlan{}
 	}
@@ -456,7 +472,7 @@ func SyncDownloads(ctx context.Context, store *db.Store, libraryRoot string, onP
 	}
 
 	for _, t := range completed {
-		seriesName, ok := resolveSeriesNameForSync(t.SavePath, containerRoot, t.Name, allSeries)
+		seriesName, ok := resolveSeriesNameForSync(t.SavePath, t.ContentPath, containerRoot, t.Name, allSeries)
 		if !ok {
 			res.Failed = append(res.Failed, fmt.Sprintf(
 				"%s: saved directly to %s with no per-series subfolder, and no tracked series name matches it — set this torrent's/RSS rule's save path to %s/<Series>, or track a matching series first",

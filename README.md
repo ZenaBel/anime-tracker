@@ -265,15 +265,21 @@ case for `download`/`rss-download`, and for any Auto Downloading rule left
 on qBittorrent's plain default save location) has no folder segment to
 read a series from; rather than dumping it into one shared local folder
 literally named after `remote.root`'s own last segment (e.g. everything
-piling into a local `downloads/`), `sync-downloads` instead guesses the
+piling into a local `downloads/`), `sync-downloads` first guesses the
 series from the torrent's own name — the same name-contains-series-title
 check `rss-download`'s auto-guess uses — matched only against series you
-already track locally. If nothing matches, that torrent is reported as
-failed with an explicit reason instead of being silently misplaced; fix it
-either by tracking the series locally first, or by giving that rule its
-own save path (`<remote.root>/<Series Folder Name>`), then re-run
-`sync-downloads`. `sync-downloads --dry-run` prints, per torrent, the
-resolved series/local folder and whether rsync would merge cleanly or
+already track locally, so an existing show keeps landing in its existing
+folder. Failing that, it falls back to qBittorrent's own per-torrent
+content subfolder: for a multi-file release (video + subs/nfo — the common
+case) qBittorrent creates `<remote.root>/<release name>/` on its own
+regardless of the save-path rule, and that release name is used to seed a
+brand-new series, no local match required. Only a torrent whose content
+sits directly in `remote.root` with no subfolder at all (a single bare
+file) has nothing usable to go on; that's reported as failed with an
+explicit reason instead of being silently misplaced — fix it by giving
+that rule its own save path (`<remote.root>/<Series Folder Name>`), then
+re-run `sync-downloads`. `sync-downloads --dry-run` prints, per torrent,
+the resolved series/local folder and whether rsync would merge cleanly or
 nest — handy for troubleshooting a mismatch (two folder names can look
 identical while differing byte-for-byte — stray whitespace, a Unicode
 dash instead of a hyphen — which the `%q`-quoted output reveals).

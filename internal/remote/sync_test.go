@@ -101,37 +101,51 @@ func TestResolveSeriesNameForSync(t *testing.T) {
 	}
 
 	t.Run("proper per-series subfolder used as-is", func(t *testing.T) {
-		name, ok := resolveSeriesNameForSync("/downloads/Frieren", "/downloads", "[SubsPlease] Frieren - 05 [1080p]", allSeries)
+		name, ok := resolveSeriesNameForSync("/downloads/Frieren", "/downloads/Frieren", "/downloads", "[SubsPlease] Frieren - 05 [1080p]", allSeries)
 		if !ok || name != "Frieren" {
 			t.Fatalf("resolveSeriesNameForSync() = (%q, %v), want (Frieren, true)", name, ok)
 		}
 	})
 
 	t.Run("containerRoot unset: falls back to plain basename regardless", func(t *testing.T) {
-		name, ok := resolveSeriesNameForSync("/downloads", "", "[SubsPlease] Frieren - 05 [1080p]", allSeries)
+		name, ok := resolveSeriesNameForSync("/downloads", "/downloads", "", "[SubsPlease] Frieren - 05 [1080p]", allSeries)
 		if !ok || name != "downloads" {
 			t.Fatalf("resolveSeriesNameForSync() = (%q, %v), want (downloads, true) — no containerRoot configured means no guard", name, ok)
 		}
 	})
 
 	t.Run("saved flat (no subfolder): guesses from torrent name", func(t *testing.T) {
-		name, ok := resolveSeriesNameForSync("/downloads", "/downloads", "[SubsPlease] Pyl Myobiusa - 08 [1080p]", allSeries)
+		name, ok := resolveSeriesNameForSync("/downloads", "/downloads/Pyl Myobiusa - 08 [1080p]", "/downloads", "[SubsPlease] Pyl Myobiusa - 08 [1080p]", allSeries)
 		if !ok || name != "Pyl Myobiusa" {
 			t.Fatalf("resolveSeriesNameForSync() = (%q, %v), want (Pyl Myobiusa, true)", name, ok)
 		}
 	})
 
 	t.Run("saved flat, trailing slash on containerRoot still matches", func(t *testing.T) {
-		name, ok := resolveSeriesNameForSync("/downloads", "/downloads/", "[SubsPlease] Frieren - 05 [1080p]", allSeries)
+		name, ok := resolveSeriesNameForSync("/downloads", "/downloads/Frieren - 05", "/downloads/", "[SubsPlease] Frieren - 05 [1080p]", allSeries)
 		if !ok || name != "Frieren" {
 			t.Fatalf("resolveSeriesNameForSync() = (%q, %v), want (Frieren, true)", name, ok)
 		}
 	})
 
-	t.Run("saved flat, no tracked series matches the torrent name: fails clearly", func(t *testing.T) {
-		_, ok := resolveSeriesNameForSync("/downloads", "/downloads", "[SubsPlease] Some Unrelated Show - 01 [1080p]", allSeries)
+	t.Run("saved flat, no tracked series matches but qBittorrent made a content subfolder: seeds a new series from it", func(t *testing.T) {
+		name, ok := resolveSeriesNameForSync("/downloads", "/downloads/Some Unrelated Show - AniLiberty [WEB-DL 1080p]", "/downloads", "[SubsPlease] Some Unrelated Show - 01 [1080p]", allSeries)
+		if !ok || name != "Some Unrelated Show - AniLiberty [WEB-DL 1080p]" {
+			t.Fatalf("resolveSeriesNameForSync() = (%q, %v), want (%q, true) — content subfolder name used to seed a brand-new series", name, ok, "Some Unrelated Show - AniLiberty [WEB-DL 1080p]")
+		}
+	})
+
+	t.Run("saved flat, content is a bare file with no subfolder at all: fails clearly", func(t *testing.T) {
+		_, ok := resolveSeriesNameForSync("/downloads", "/downloads/Some Unrelated Show - 01.mkv", "/downloads", "[SubsPlease] Some Unrelated Show - 01 [1080p]", allSeries)
 		if ok {
-			t.Fatal("expected resolveSeriesNameForSync to fail when nothing matches, not guess wrong")
+			t.Fatal("expected resolveSeriesNameForSync to fail: content_path is a flat file, not a well-formed series folder name")
+		}
+	})
+
+	t.Run("saved flat, content_path also equals containerRoot (no info at all): fails clearly", func(t *testing.T) {
+		_, ok := resolveSeriesNameForSync("/downloads", "/downloads", "/downloads", "[SubsPlease] Some Unrelated Show - 01 [1080p]", allSeries)
+		if ok {
+			t.Fatal("expected resolveSeriesNameForSync to fail when neither a series match nor a usable content subfolder exists")
 		}
 	})
 }
