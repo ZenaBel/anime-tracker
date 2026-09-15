@@ -17,7 +17,7 @@ import (
 var manageYes bool
 
 func init() {
-	for _, c := range []*cobra.Command{renameSeriesCmd, deleteSeriesCmd, renameEpisodeCmd, deleteEpisodeCmd} {
+	for _, c := range []*cobra.Command{renameSeriesCmd, deleteSeriesCmd, deleteSeriesFilesCmd, renameEpisodeCmd, deleteEpisodeCmd} {
 		c.Flags().BoolVarP(&manageYes, "yes", "y", false, "skip the confirmation prompt")
 	}
 }
@@ -97,6 +97,35 @@ var deleteSeriesCmd = &cobra.Command{
 			return err
 		}
 		fmt.Printf("deleted: %s\n", s.Title)
+		return nil
+	},
+}
+
+var deleteSeriesFilesCmd = &cobra.Command{
+	Use:   "delete-series-files <query>",
+	Short: "Delete a series' episode files from disk, keeping its watch history in the database",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		store, _, closeStore, err := openStore(cmd)
+		if err != nil {
+			return err
+		}
+		defer closeStore()
+
+		ctx := cmd.Context()
+		s, err := findSeriesByQuery(ctx, store, args[0])
+		if err != nil {
+			return err
+		}
+		prompt := fmt.Sprintf("Delete %q's %d episode file(s) from disk? The database record stays.", s.Title, s.Total)
+		if !manageYes && !confirm(prompt) {
+			fmt.Println("cancelled")
+			return nil
+		}
+		if err := library.DeleteSeriesFiles(s); err != nil {
+			return err
+		}
+		fmt.Printf("files deleted (record kept): %s\n", s.Title)
 		return nil
 	},
 }

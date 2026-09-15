@@ -52,6 +52,7 @@ func init() {
 	rootCmd.AddCommand(unwatchCmd)
 	rootCmd.AddCommand(renameSeriesCmd)
 	rootCmd.AddCommand(deleteSeriesCmd)
+	rootCmd.AddCommand(deleteSeriesFilesCmd)
 	rootCmd.AddCommand(renameEpisodeCmd)
 	rootCmd.AddCommand(deleteEpisodeCmd)
 	rootCmd.AddCommand(configCmd)

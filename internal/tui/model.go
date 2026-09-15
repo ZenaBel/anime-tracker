@@ -228,6 +228,7 @@ const (
 	manageRenameEpisode
 	manageDeleteSeries
 	manageDeleteEpisode
+	manageDeleteSeriesFiles
 )
 
 // manageState holds the rename/delete overlay's state; it's active
@@ -502,6 +503,14 @@ func renameSeriesCmd(store *db.Store, s db.SeriesProgress, newTitle string) tea.
 func deleteSeriesCmd(store *db.Store, s db.SeriesProgress) tea.Cmd {
 	return func() tea.Msg {
 		return manageDoneMsg{err: library.DeleteSeries(context.Background(), store, s)}
+	}
+}
+
+// deleteSeriesFilesCmd removes a series' files from disk but keeps its
+// watch history in the database (see library.DeleteSeriesFiles).
+func deleteSeriesFilesCmd(s db.SeriesProgress) tea.Cmd {
+	return func() tea.Msg {
+		return manageDoneMsg{err: library.DeleteSeriesFiles(s)}
 	}
 }
 

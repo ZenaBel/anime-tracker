@@ -137,7 +137,7 @@ func (m Model) View() string {
 	body := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 
 	var footer strings.Builder
-	footer.WriteString(helpStyle.Render("↑/↓ or j/k: move  ←/→ or h/l: switch pane  enter: open/focus  space: toggle watched  p: playlist  R: rename  D: delete  r: rescan  s: sort (" + m.sortMode.String() + ")  /: search  c: settings  g: rss  S: sync downloads  q: quit"))
+	footer.WriteString(helpStyle.Render("↑/↓ or j/k: move  ←/→ or h/l: switch pane  enter: open/focus  space: toggle watched  p: playlist  R: rename  D: delete  d: delete files (keep record)  r: rescan  s: sort (" + m.sortMode.String() + ")  /: search  c: settings  g: rss  S: sync downloads  q: quit"))
 	if m.err != nil {
 		footer.WriteString("\n")
 		footer.WriteString(errStyle.Render("error: " + m.err.Error()))
@@ -320,6 +320,14 @@ func (m Model) viewManage() string {
 		b.WriteString(errStyle.Render("Delete episode"))
 		b.WriteString("\n\n")
 		b.WriteString(fmt.Sprintf("Permanently delete %q from disk?\nThis cannot be undone.", ep.FileName))
+		b.WriteString("\n\n")
+		b.WriteString(helpStyle.Render("y / enter: confirm  ·  any other key: cancel"))
+
+	case manageDeleteSeriesFiles:
+		s, _ := m.selectedSeries()
+		b.WriteString(errStyle.Render("Delete files (keep record)"))
+		b.WriteString("\n\n")
+		b.WriteString(fmt.Sprintf("Delete %q's %d episode file(s) from disk to free space?\nThe series and its watch history stay in the database.", s.Title, s.Total))
 		b.WriteString("\n\n")
 		b.WriteString(helpStyle.Render("y / enter: confirm  ·  any other key: cancel"))
 	}

@@ -329,6 +329,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case "d":
+		if m.focus == focusSeries {
+			if _, ok := m.selectedSeries(); ok {
+				m.manage = manageState{kind: manageDeleteSeriesFiles}
+			}
+		}
+		return m, nil
+
 	case "up", "k":
 		return m.moveSelection(-1)
 
@@ -426,7 +434,7 @@ func (m Model) handleManageKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.manage.kind {
 	case manageRenameSeries, manageRenameEpisode:
 		return m.handleRenameKey(msg)
-	case manageDeleteSeries, manageDeleteEpisode:
+	case manageDeleteSeries, manageDeleteEpisode, manageDeleteSeriesFiles:
 		return m.handleDeleteConfirmKey(msg)
 	}
 	return m, nil
@@ -499,6 +507,11 @@ func (m Model) handleDeleteConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if ep, ok := m.selectedEpisode(); ok {
 			m.statusMsg = "deleting..."
 			return m, deleteEpisodeCmd(m.store, ep)
+		}
+	case manageDeleteSeriesFiles:
+		if s, ok := m.selectedSeries(); ok {
+			m.statusMsg = "deleting files..."
+			return m, deleteSeriesFilesCmd(s)
 		}
 	}
 	return m, nil

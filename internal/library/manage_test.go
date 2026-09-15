@@ -160,6 +160,53 @@ func TestDeleteSeries(t *testing.T) {
 	}
 }
 
+func TestDeleteSeriesFiles(t *testing.T) {
+	root := t.TempDir()
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	dir := filepath.Join(root, "Finished Show")
+	writeFile(t, filepath.Join(dir, "01.mkv"))
+	writeFile(t, filepath.Join(dir, "02.mkv"))
+
+	seriesID, _, err := store.UpsertSeries(ctx, "Finished Show", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpsertEpisodeSeen(ctx, seriesID, filepath.Join(dir, "01.mkv"), "01.mkv", nil, 0, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+
+	all, err := store.ListSeriesWithProgress(ctx, db.SortAlphaAsc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := all[0]
+
+	if err := DeleteSeriesFiles(s); err != nil {
+		t.Fatalf("DeleteSeriesFiles() error = %v", err)
+	}
+
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("directory should be gone from disk")
+	}
+
+	all, err = store.ListSeriesWithProgress(ctx, db.SortAlphaAsc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 1 || all[0].ID != s.ID {
+		t.Fatalf("series row should be kept, got %+v", all)
+	}
+	eps, err := store.ListEpisodesBySeries(ctx, seriesID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(eps) != 1 {
+		t.Fatalf("episode row should be kept, got %+v", eps)
+	}
+}
+
 func TestRenameEpisode(t *testing.T) {
 	root := t.TempDir()
 	store := newTestStore(t)
