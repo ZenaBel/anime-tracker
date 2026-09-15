@@ -59,15 +59,17 @@ func DeleteSeries(ctx context.Context, store *db.Store, s db.SeriesProgress) err
 
 // DeleteSeriesFiles reclaims disk space for a series you're done with while
 // keeping its watch history: it removes the on-disk directory but leaves
-// the series and episode rows in the database untouched. Because the
+// the series and episode rows in the database untouched, marking the
+// series as files-deleted so the TUI/CLI can flag it. Because the
 // directory is gone, a later Scan simply won't visit it (it no longer
 // appears in the root listing), so the existing watched/progress state
-// stays exactly as it was.
-func DeleteSeriesFiles(s db.SeriesProgress) error {
+// stays exactly as it was; if files reappear at the same path, the next
+// Scan clears the mark.
+func DeleteSeriesFiles(ctx context.Context, store *db.Store, s db.SeriesProgress) error {
 	if err := os.RemoveAll(s.DirPath); err != nil {
 		return fmt.Errorf("deleting folder on disk: %w", err)
 	}
-	return nil
+	return store.MarkSeriesFilesDeleted(ctx, s.ID)
 }
 
 // RenameEpisode renames one episode's file on disk, keeping it in the same

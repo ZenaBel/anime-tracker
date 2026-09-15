@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS settings (
 var addedColumns = map[string][2]string{
 	"resume_position_seconds": {"episodes", "REAL"},
 	"duration_seconds":        {"episodes", "REAL"},
+	"files_deleted_at":        {"series", "DATETIME"},
 }
 
 func migrate(conn *sql.DB) error {

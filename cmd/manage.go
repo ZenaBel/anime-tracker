@@ -122,7 +122,7 @@ var deleteSeriesFilesCmd = &cobra.Command{
 			fmt.Println("cancelled")
 			return nil
 		}
-		if err := library.DeleteSeriesFiles(s); err != nil {
+		if err := library.DeleteSeriesFiles(ctx, store, s); err != nil {
 			return err
 		}
 		fmt.Printf("files deleted (record kept): %s\n", s.Title)

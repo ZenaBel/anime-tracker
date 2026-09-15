@@ -175,6 +175,9 @@ func (m Model) viewSeriesPane() string {
 		s := m.series[i]
 		title := scrollingText(s.Title, 18, i == m.seriesIdx, m.scrollTick)
 		line := fmt.Sprintf("%s %-18s %3d/%-3d", progressBar(s.Watched, s.Total), title, s.Watched, s.Total)
+		if s.FilesDeleted {
+			line += dimTitle.Render(" ⊘ no files")
+		}
 		if i == m.seriesIdx {
 			line = selectedStyle.Render("> " + line)
 		} else {

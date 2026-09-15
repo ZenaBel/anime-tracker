@@ -508,9 +508,9 @@ func deleteSeriesCmd(store *db.Store, s db.SeriesProgress) tea.Cmd {
 
 // deleteSeriesFilesCmd removes a series' files from disk but keeps its
 // watch history in the database (see library.DeleteSeriesFiles).
-func deleteSeriesFilesCmd(s db.SeriesProgress) tea.Cmd {
+func deleteSeriesFilesCmd(store *db.Store, s db.SeriesProgress) tea.Cmd {
 	return func() tea.Msg {
-		return manageDoneMsg{err: library.DeleteSeriesFiles(s)}
+		return manageDoneMsg{err: library.DeleteSeriesFiles(context.Background(), store, s)}
 	}
 }
 

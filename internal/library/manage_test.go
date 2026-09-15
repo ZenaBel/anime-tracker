@@ -183,7 +183,7 @@ func TestDeleteSeriesFiles(t *testing.T) {
 	}
 	s := all[0]
 
-	if err := DeleteSeriesFiles(s); err != nil {
+	if err := DeleteSeriesFiles(ctx, store, s); err != nil {
 		t.Fatalf("DeleteSeriesFiles() error = %v", err)
 	}
 
@@ -198,12 +198,29 @@ func TestDeleteSeriesFiles(t *testing.T) {
 	if len(all) != 1 || all[0].ID != s.ID {
 		t.Fatalf("series row should be kept, got %+v", all)
 	}
+	if !all[0].FilesDeleted {
+		t.Fatalf("series row should be flagged as files-deleted, got %+v", all[0])
+	}
 	eps, err := store.ListEpisodesBySeries(ctx, seriesID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(eps) != 1 {
 		t.Fatalf("episode row should be kept, got %+v", eps)
+	}
+
+	// Files reappearing at the same path (e.g. a new season download)
+	// clears the mark on the next scan.
+	writeFile(t, filepath.Join(dir, "01.mkv"))
+	if _, _, err := store.UpsertSeries(ctx, "Finished Show", dir); err != nil {
+		t.Fatal(err)
+	}
+	all, err = store.ListSeriesWithProgress(ctx, db.SortAlphaAsc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if all[0].FilesDeleted {
+		t.Fatalf("files-deleted mark should clear once the series is rescanned, got %+v", all[0])
 	}
 }
 

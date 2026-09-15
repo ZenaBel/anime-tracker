@@ -59,11 +59,12 @@ func FirstUnwatchedIndex(eps []Episode) int {
 }
 
 type SeriesProgress struct {
-	ID      int64
-	Title   string
-	DirPath string
-	Total   int
-	Watched int
+	ID           int64
+	Title        string
+	DirPath      string
+	Total        int
+	Watched      int
+	FilesDeleted bool // files removed via DeleteSeriesFiles; dir_path no longer exists on disk
 }
 
 type SortMode int
@@ -152,7 +153,23 @@ func (s *Store) UpsertSeries(ctx context.Context, title, dirPath string) (int64,
 			return 0, false, fmt.Errorf("updating series title: %w", err)
 		}
 	}
+	// Being scanned means dir_path exists on disk again (Scan only reaches
+	// here after successfully reading it), so any earlier files-deleted
+	// mark no longer applies.
+	if _, err := s.db.ExecContext(ctx, `UPDATE series SET files_deleted_at = NULL WHERE id = ?`, id); err != nil {
+		return 0, false, fmt.Errorf("clearing files_deleted_at: %w", err)
+	}
 	return id, false, nil
+}
+
+// MarkSeriesFilesDeleted records that a series' files were removed from
+// disk (via DeleteSeriesFiles) while its database record was kept.
+func (s *Store) MarkSeriesFilesDeleted(ctx context.Context, seriesID int64) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE series SET files_deleted_at = CURRENT_TIMESTAMP WHERE id = ?`, seriesID)
+	if err != nil {
+		return fmt.Errorf("marking series files deleted: %w", err)
+	}
+	return nil
 }
 
 // UpsertEpisodeSeen records that filePath was observed on disk. On an
@@ -256,7 +273,8 @@ func (s *Store) ListSeriesWithProgress(ctx context.Context, sort SortMode) ([]Se
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT series.id, series.title, series.dir_path,
 		       COUNT(episodes.id) AS total,
-		       COALESCE(SUM(CASE WHEN episodes.status = ? THEN 1 ELSE 0 END), 0) AS watched
+		       COALESCE(SUM(CASE WHEN episodes.status = ? THEN 1 ELSE 0 END), 0) AS watched,
+		       series.files_deleted_at
 		FROM series
 		LEFT JOIN episodes ON episodes.series_id = series.id
 		GROUP BY series.id
@@ -269,9 +287,11 @@ func (s *Store) ListSeriesWithProgress(ctx context.Context, sort SortMode) ([]Se
 	var out []SeriesProgress
 	for rows.Next() {
 		var sp SeriesProgress
-		if err := rows.Scan(&sp.ID, &sp.Title, &sp.DirPath, &sp.Total, &sp.Watched); err != nil {
+		var filesDeletedAt sql.NullString
+		if err := rows.Scan(&sp.ID, &sp.Title, &sp.DirPath, &sp.Total, &sp.Watched, &filesDeletedAt); err != nil {
 			return nil, fmt.Errorf("scanning series progress: %w", err)
 		}
+		sp.FilesDeleted = filesDeletedAt.Valid
 		out = append(out, sp)
 	}
 	return out, rows.Err()

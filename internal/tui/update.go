@@ -511,7 +511,7 @@ func (m Model) handleDeleteConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case manageDeleteSeriesFiles:
 		if s, ok := m.selectedSeries(); ok {
 			m.statusMsg = "deleting files..."
-			return m, deleteSeriesFilesCmd(s)
+			return m, deleteSeriesFilesCmd(m.store, s)
 		}
 	}
 	return m, nil
