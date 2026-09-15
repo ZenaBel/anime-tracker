@@ -5,34 +5,46 @@ import "testing"
 func TestScrollingText(t *testing.T) {
 	s := "Hello World" // 11 runes, extra = 11-5 = 6 positions to reveal the tail
 
-	if got := scrollingText(s, 20, true, 0); got != s {
+	if got := scrollingText(s, 20, true, 0, false); got != s {
 		t.Errorf("fits within width: got %q, want %q", got, s)
 	}
-	if got := scrollingText(s, 5, false, 0); got != truncate(s, 5) {
+	if got := scrollingText(s, 5, false, 0, false); got != truncate(s, 5) {
 		t.Errorf("unselected overflow: got %q, want truncate()'d %q", got, truncate(s, 5))
 	}
 
 	// Holds at the start for scrollHoldTicks.
-	if got := scrollingText(s, 5, true, 0); got != "Hello" {
+	if got := scrollingText(s, 5, true, 0, false); got != "Hello" {
 		t.Errorf("selected, tick 0: got %q, want %q (holding at start)", got, "Hello")
 	}
-	if got := scrollingText(s, 5, true, scrollHoldTicks-1); got != "Hello" {
+	if got := scrollingText(s, 5, true, scrollHoldTicks-1, false); got != "Hello" {
 		t.Errorf("selected, still within start hold: got %q, want %q", got, "Hello")
 	}
 
 	// Slides forward to fully reveal the tail, and holds there too — every
 	// frame along the way must be a real contiguous substring of s.
-	if got := scrollingText(s, 5, true, scrollHoldTicks+6); got != "World" {
+	if got := scrollingText(s, 5, true, scrollHoldTicks+6, false); got != "World" {
 		t.Errorf("selected, tail fully revealed: got %q, want %q", got, "World")
 	}
-	if got := scrollingText(s, 5, true, 2*scrollHoldTicks+6-1); got != "World" {
+	if got := scrollingText(s, 5, true, 2*scrollHoldTicks+6-1, false); got != "World" {
 		t.Errorf("selected, still within tail hold: got %q, want %q", got, "World")
 	}
 
 	// Slides back and, after one full lap, lands on the held start again.
 	cycle := 2*scrollHoldTicks + 2*6
-	if got := scrollingText(s, 5, true, cycle); got != "Hello" {
+	if got := scrollingText(s, 5, true, cycle, false); got != "Hello" {
 		t.Errorf("selected, one full lap later: got %q, want %q (back at start)", got, "Hello")
+	}
+
+	// peek jumps straight to the tail regardless of tick/phase, and leaves
+	// unselected/fits-within-width rows untouched.
+	if got := scrollingText(s, 5, true, 0, true); got != "World" {
+		t.Errorf("peek at tick 0: got %q, want %q", got, "World")
+	}
+	if got := scrollingText(s, 20, true, 0, true); got != s {
+		t.Errorf("peek, fits within width: got %q, want %q", got, s)
+	}
+	if got := scrollingText(s, 5, false, 0, true); got != truncate(s, 5) {
+		t.Errorf("peek, unselected: got %q, want truncate()'d %q", got, truncate(s, 5))
 	}
 }
 

@@ -72,6 +72,12 @@ type Model struct {
 	// drives the scrolling-text animation for whichever row is currently
 	// selected, when its content is too wide for its column.
 	scrollTick int
+
+	// peekTail, toggled by ctrl+e, overrides the scrolling-text bounce and
+	// jumps straight to the tail of the selected row's text — e.g. to read
+	// an RSS article title's codec tag (AVC/HEVC) without waiting out the
+	// bounce cycle.
+	peekTail bool
 }
 
 // scrollTickInterval controls how often the selected row's scrolling-text

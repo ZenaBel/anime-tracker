@@ -272,6 +272,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.helpActive = true
 		return m, nil
 
+	case "ctrl+e":
+		m.peekTail = !m.peekTail
+		return m, nil
+
 	case "r":
 		m.statusMsg = "scanning..."
 		return m, scanCmd(m.store, m.rootDir)
@@ -405,6 +409,10 @@ func (m Model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.searchScope = search.NextScope(m.searchScope)
 		m.searchIdx = 0
 		return m.withSearchResults(), nil
+
+	case tea.KeyCtrlE:
+		m.peekTail = !m.peekTail
+		return m, nil
 
 	case tea.KeyUp:
 		m.searchIdx = clamp(m.searchIdx-1, 0, max(0, len(m.searchResults)-1))
@@ -604,6 +612,10 @@ func (m Model) handleRSSKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.rss = rssState{}
+		return m, nil
+
+	case "ctrl+e":
+		m.peekTail = !m.peekTail
 		return m, nil
 
 	case "up", "k":

@@ -68,7 +68,10 @@ confirmation prompt) · `r` rescans the library · `s` cycles sort order
 overlay (qBittorrent/SSH config — see below) · `g` opens the RSS overlay
 (browse/download articles qBittorrent's RSS reader has fetched — see below)
 · `S` runs `sync-downloads` (see below) and refreshes the panes if
-anything came in · `q` quits.
+anything came in · `ctrl+e` toggles jumping straight to the tail of the
+selected row's name when it's too long to fit its column and gets
+truncated/scrolled (e.g. to read an RSS article title's codec tag —
+AVC/HEVC — without waiting out the auto-scroll) · `q` quits.
 
 ### Renaming / deleting
 
