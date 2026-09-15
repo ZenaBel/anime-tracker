@@ -66,6 +66,8 @@ type Model struct {
 
 	rss rssState
 
+	helpActive bool
+
 	// scrollTick advances on every scrollTickMsg (see scrollTickCmd) and
 	// drives the scrolling-text animation for whichever row is currently
 	// selected, when its content is too wide for its column.

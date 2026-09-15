@@ -22,6 +22,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, scrollTickCmd()
 
 	case tea.KeyMsg:
+		if m.helpActive {
+			m.helpActive = false
+			return m, nil
+		}
 		if m.searchActive {
 			return m.handleSearchKey(msg)
 		}
@@ -263,6 +267,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q", "ctrl+c":
 		return m, tea.Quit
+
+	case "?":
+		m.helpActive = true
+		return m, nil
 
 	case "r":
 		m.statusMsg = "scanning..."

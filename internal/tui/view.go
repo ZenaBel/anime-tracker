@@ -119,6 +119,9 @@ func visibleWindow(total, selected, maxVisible int) (start, end int) {
 }
 
 func (m Model) View() string {
+	if m.helpActive {
+		return m.viewHelp()
+	}
 	if m.searchActive {
 		return m.viewSearch()
 	}
@@ -137,7 +140,7 @@ func (m Model) View() string {
 	body := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 
 	var footer strings.Builder
-	footer.WriteString(helpStyle.Render("↑/↓ or j/k: move  ←/→ or h/l: switch pane  enter: open/focus  space: toggle watched  p: playlist  R: rename  D: delete  d: delete files (keep record)  r: rescan  s: sort (" + m.sortMode.String() + ")  /: search  c: settings  g: rss  S: sync downloads  q: quit"))
+	footer.WriteString(helpStyle.Render("?: help  ·  sort: " + m.sortMode.String() + "  ·  q: quit"))
 	if m.err != nil {
 		footer.WriteString("\n")
 		footer.WriteString(errStyle.Render("error: " + m.err.Error()))
@@ -287,6 +290,54 @@ func (m Model) viewSearch() string {
 
 	b.WriteString("\n")
 	b.WriteString(helpStyle.Render("type to filter  tab: scope  ↑/↓: move  enter: jump  esc: cancel"))
+
+	return searchPaneStyle.Render(b.String())
+}
+
+// helpRow is one "key: description" line in the help overlay.
+type helpRow struct {
+	key, desc string
+}
+
+func (m Model) viewHelp() string {
+	var b strings.Builder
+	b.WriteString(focusedTitle.Render("Keybindings"))
+	b.WriteString("\n\n")
+
+	section := func(title string, rows []helpRow) {
+		b.WriteString(dimTitle.Render(title))
+		b.WriteString("\n")
+		for _, r := range rows {
+			b.WriteString(fmt.Sprintf("  %-14s %s\n", r.key, r.desc))
+		}
+		b.WriteString("\n")
+	}
+
+	section("Navigation", []helpRow{
+		{"↑/↓, j/k", "move selection"},
+		{"←/→, h/l", "switch between the series and episodes panes"},
+		{"enter", "on a series: focus its episodes  ·  on an episode: open/play it"},
+		{"space", "toggle the selected episode watched/unwatched"},
+		{"p", "play all unwatched episodes of the series as a playlist"},
+	})
+
+	section("Library management", []helpRow{
+		{"R", "rename the selected series or episode (renames the file/folder too)"},
+		{"D", "delete permanently: file(s) on disk and the database record"},
+		{"d", "delete a series' files but keep its record and watch history (series pane)"},
+	})
+
+	section("Other", []helpRow{
+		{"r", "rescan the library"},
+		{"s", "cycle sort mode"},
+		{"/", "search series and episodes"},
+		{"c", "settings"},
+		{"g", "RSS feed browser"},
+		{"S", "sync downloads from qBittorrent"},
+		{"q, ctrl+c", "quit"},
+	})
+
+	b.WriteString(helpStyle.Render("press any key to close"))
 
 	return searchPaneStyle.Render(b.String())
 }
