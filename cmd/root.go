@@ -60,6 +60,8 @@ func init() {
 	rootCmd.AddCommand(syncDownloadsCmd)
 	rootCmd.AddCommand(rssListCmd)
 	rootCmd.AddCommand(rssDownloadCmd)
+	rootCmd.AddCommand(exportCmd)
+	rootCmd.AddCommand(importCmd)
 	rootCmd.AddCommand(tuiCmd)
 }
 

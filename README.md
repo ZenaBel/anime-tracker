@@ -45,6 +45,8 @@ anime-tracker download <series-query> <magnet-or-torrent-url>   # queue a downlo
 anime-tracker sync-downloads [--dry-run]           # pull finished remote downloads into the library + rescan
 anime-tracker rss [--all]                          # list RSS articles qBittorrent's RSS reader has fetched
 anime-tracker rss-download <article-number> [series-query]   # download one listed article
+anime-tracker export <file.json>                   # export watch history (status/progress) to a JSON file
+anime-tracker import <file.json>                   # restore watch history, matched against the already-scanned library
 ```
 
 The four `rename-*`/`delete-*` commands prompt for confirmation (`[y/N]`)
@@ -294,6 +296,21 @@ long a large episode takes. On the CLI this overwrites one line in place
 
 There's no background polling — run `sync-downloads` whenever you want to
 check (a cron job or a shell alias works fine for that).
+
+### Backup / restore watch history
+
+`export <file.json>` writes every series' title, folder name, and per-episode
+status/timestamps/playback progress to a JSON file. `import <file.json>`
+reads one back and overlays it onto the current library — it prompts for
+confirmation first (`-y` skips it), same as the other overwriting commands.
+
+Import never creates series or episodes itself; run `scan` first so the
+library is populated, then import to restore state onto what's already
+there. Matching is by series folder name and episode file name, not the
+full absolute path stored in the database, so a backup taken on one machine
+restores cleanly onto another (or after a reinstall) as long as the same
+folder/file names exist. Series or episodes it can't find locally are
+reported and skipped, not created.
 
 ## How "watched" is detected
 
