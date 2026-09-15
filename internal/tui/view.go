@@ -173,11 +173,12 @@ func (m Model) viewSeriesPane() string {
 	}
 	for i := start; i < end; i++ {
 		s := m.series[i]
-		title := scrollingText(s.Title, 18, i == m.seriesIdx, m.scrollTick)
-		line := fmt.Sprintf("%s %-18s %3d/%-3d", progressBar(s.Watched, s.Total), title, s.Watched, s.Total)
+		titleText := s.Title
 		if s.FilesDeleted {
-			line += dimTitle.Render(" ⊘ no files")
+			titleText = "⊘ " + titleText
 		}
+		title := scrollingText(titleText, 18, i == m.seriesIdx, m.scrollTick)
+		line := fmt.Sprintf("%s %-18s %3d/%-3d", progressBar(s.Watched, s.Total), title, s.Watched, s.Total)
 		if i == m.seriesIdx {
 			line = selectedStyle.Render("> " + line)
 		} else {
