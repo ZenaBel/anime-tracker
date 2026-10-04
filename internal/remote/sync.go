@@ -339,10 +339,12 @@ func remapPath(rpath, containerRoot, hostRoot string) string {
 // rule, and that release name is exactly the well-formed
 // "<Title> - <Group> [<Quality>]" folder name the rest of this app already
 // uses — good enough to seed a brand-new series with, no local match
-// required. That fallback only fires when content actually sits one level
-// below containerRoot in a real subfolder (an extensionless basename); a
-// bare flat file (savePath == containerRoot and contentPath is the file
-// itself, no subfolder) gives no usable name and falls through to failure.
+// required. That fallback only fires when content actually sits inside a real
+// subfolder of containerRoot — the folder is the first path segment below
+// it, so it works both when contentPath is the folder itself (multi-file
+// torrent) and the lone file inside it (single-file torrent). A bare flat
+// file (savePath == containerRoot and contentPath is the file itself, no
+// subfolder) gives no usable name and falls through to failure.
 // ok is false if none of these can determine one.
 func resolveSeriesNameForSync(savePath, contentPath, containerRoot, torrentName string, allSeries []db.SeriesProgress) (string, bool) {
 	if containerRoot == "" || strings.TrimRight(savePath, "/") != strings.TrimRight(containerRoot, "/") {
@@ -351,12 +353,33 @@ func resolveSeriesNameForSync(savePath, contentPath, containerRoot, torrentName 
 	if guess, ok := search.GuessSeriesForTitle(allSeries, torrentName); ok {
 		return guess.Title, true
 	}
-	if path.Dir(contentPath) == strings.TrimRight(containerRoot, "/") {
-		if base := path.Base(contentPath); base != "" && base != "." && base != "/" && path.Ext(base) == "" {
-			return base, true
-		}
+	if folder, ok := releaseFolderUnder(containerRoot, contentPath); ok {
+		return folder, true
 	}
 	return "", false
+}
+
+// releaseFolderUnder returns the first path segment of contentPath below
+// root — the release folder qBittorrent made on its own — and ok=false if
+// contentPath isn't inside a subfolder of root at all. Taking the first
+// segment (rather than path.Dir/path.Base of contentPath) matters because a
+// single-file torrent reports content_path as the file itself, one level
+// deeper than a multi-file one's folder: .../<release>/<episode>.mkv.
+func releaseFolderUnder(root, contentPath string) (string, bool) {
+	rel, found := strings.CutPrefix(contentPath, strings.TrimRight(root, "/")+"/")
+	if !found {
+		return "", false
+	}
+	folder, _, hasChild := strings.Cut(rel, "/")
+	if folder == "" || folder == "." || folder == ".." {
+		return "", false
+	}
+	// No further segment: contentPath is the entry directly under root — a
+	// folder (multi-file torrent) only if it has no extension, else a bare file.
+	if !hasChild && path.Ext(folder) != "" {
+		return "", false
+	}
+	return folder, true
 }
 
 // SyncPlan is what SyncDownloads would do with one completed torrent,
