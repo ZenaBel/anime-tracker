@@ -47,21 +47,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.err = nil
 
-		// Re-sorting or reloading can shuffle positions (e.g. the
-		// "watched" sort mode reacting to a status change), so track
-		// selection by series id rather than trusting the old index.
-		var selectedID int64
-		if s, ok := m.selectedSeries(); ok {
-			selectedID = s.ID
-		}
-		m.series = msg.series
-		m.seriesIdx = indexByID(m.series, selectedID, func(s db.SeriesProgress) int64 { return s.ID }, m.seriesIdx)
-
-		if s, ok := m.selectedSeries(); ok {
-			return m, loadEpisodesCmd(m.store, s.ID)
-		}
-		m.episodes = nil
-		return m, nil
+		// Re-sorting, filtering or reloading can shuffle positions (e.g.
+		// the "watched" sort mode reacting to a status change), so
+		// selection is tracked by series id rather than the old index.
+		return m.withFilteredSeries(msg.series)
 
 	case episodesLoadedMsg:
 		if msg.err != nil {
@@ -284,6 +273,15 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.sortMode = nextSortMode(m.sortMode)
 		m.statusMsg = "sort: " + m.sortMode.String()
 		return m, loadSeriesCmd(m.store, m.sortMode)
+
+	case "f", "F":
+		if msg.String() == "f" {
+			m.filter = m.filter.Next()
+		} else {
+			m.filter = m.filter.Prev()
+		}
+		m.statusMsg = "filter: " + m.filter.String()
+		return m.withFilteredSeries(m.allSeries)
 
 	case "/":
 		m.searchActive = true

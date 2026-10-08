@@ -64,6 +64,7 @@ type SeriesProgress struct {
 	DirPath      string
 	Total        int
 	Watched      int
+	Watching     int  // episodes started but not finished
 	FilesDeleted bool // files removed via DeleteSeriesFiles; dir_path no longer exists on disk
 }
 
@@ -274,11 +275,12 @@ func (s *Store) ListSeriesWithProgress(ctx context.Context, sort SortMode) ([]Se
 		SELECT series.id, series.title, series.dir_path,
 		       COUNT(episodes.id) AS total,
 		       COALESCE(SUM(CASE WHEN episodes.status = ? THEN 1 ELSE 0 END), 0) AS watched,
+		       COALESCE(SUM(CASE WHEN episodes.status = ? THEN 1 ELSE 0 END), 0) AS watching,
 		       series.files_deleted_at
 		FROM series
 		LEFT JOIN episodes ON episodes.series_id = series.id
 		GROUP BY series.id
-		`+orderClause, StatusWatched)
+		`+orderClause, StatusWatched, StatusWatching)
 	if err != nil {
 		return nil, fmt.Errorf("querying series progress: %w", err)
 	}
@@ -288,7 +290,7 @@ func (s *Store) ListSeriesWithProgress(ctx context.Context, sort SortMode) ([]Se
 	for rows.Next() {
 		var sp SeriesProgress
 		var filesDeletedAt sql.NullString
-		if err := rows.Scan(&sp.ID, &sp.Title, &sp.DirPath, &sp.Total, &sp.Watched, &filesDeletedAt); err != nil {
+		if err := rows.Scan(&sp.ID, &sp.Title, &sp.DirPath, &sp.Total, &sp.Watched, &sp.Watching, &filesDeletedAt); err != nil {
 			return nil, fmt.Errorf("scanning series progress: %w", err)
 		}
 		sp.FilesDeleted = filesDeletedAt.Valid

@@ -148,3 +148,15 @@ func TestNextScope(t *testing.T) {
 		}
 	}
 }
+
+func TestSearch_SkipsEpisodesOfSeriesNotInList(t *testing.T) {
+	series := []db.SeriesProgress{{ID: 1, Title: "Shown"}}
+	eps := []db.Episode{
+		{ID: 10, SeriesID: 1, FileName: "shown 01.mkv"},
+		{ID: 20, SeriesID: 2, FileName: "hidden 01.mkv"},
+	}
+	got := Search(series, eps, "", ScopeEpisodes)
+	if len(got) != 1 || got[0].Episode.ID != 10 {
+		t.Fatalf("got %+v, want only episode 10", got)
+	}
+}

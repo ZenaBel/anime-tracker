@@ -123,7 +123,8 @@ func (c combinedSource) Len() int { return len(c) }
 // Search fuzzy-matches query against series titles and/or episode file
 // names (scoped by seriesTitle too, so "frieren 05" finds the episode even
 // though "05" alone isn't in the filename's series name) depending on
-// scope, ranked by match quality. An empty query returns everything in
+// scope, ranked by match quality. Episodes whose series isn't in allSeries
+// are skipped, so passing a filtered series list searches only within it. An empty query returns everything in
 // scope, unranked, in series/episode list order.
 func Search(allSeries []db.SeriesProgress, allEpisodes []db.Episode, query string, scope Scope) []Result {
 	seriesByID := make(map[int64]db.SeriesProgress, len(allSeries))
@@ -139,7 +140,11 @@ func Search(allSeries []db.SeriesProgress, allEpisodes []db.Episode, query strin
 	}
 	if scope != ScopeSeries {
 		for _, ep := range allEpisodes {
-			items = append(items, Result{Kind: KindEpisode, Series: seriesByID[ep.SeriesID], Episode: ep})
+			series, ok := seriesByID[ep.SeriesID]
+			if !ok {
+				continue // its series isn't in allSeries (e.g. hidden by a filter)
+			}
+			items = append(items, Result{Kind: KindEpisode, Series: series, Episode: ep})
 		}
 	}
 

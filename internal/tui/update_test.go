@@ -3,6 +3,8 @@ package tui
 import (
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"anime-tracker/internal/db"
 	"anime-tracker/internal/qbt"
 )
@@ -113,5 +115,75 @@ func TestIndexByID(t *testing.T) {
 	}
 	if got := indexByID([]db.Episode{}, 1, keyFn, 5); got != 0 {
 		t.Errorf("indexByID empty list: got %d, want 0", got)
+	}
+}
+
+// TestFilterKey_CyclesAndKeepsSelection covers the series filter: seriesLoaded
+// hides files-deleted series under the default "all" filter, "f" re-filters
+// in place without a reload, and the selected series stays selected by id
+// when it survives the filter (and the cursor clamps when it doesn't).
+func TestFilterKey_CyclesAndKeepsSelection(t *testing.T) {
+	all := []db.SeriesProgress{
+		{ID: 1, Title: "A", Total: 2, Watched: 2},
+		{ID: 2, Title: "B", Total: 2},
+		{ID: 3, Title: "C", Total: 2, Watched: 1},
+		{ID: 4, Title: "D", Total: 2, FilesDeleted: true},
+	}
+	ids := func(m Model) []int64 {
+		var out []int64
+		for _, s := range m.series {
+			out = append(out, s.ID)
+		}
+		return out
+	}
+
+	m := Model{}
+	next, _ := m.Update(seriesLoadedMsg{series: all})
+	m = next.(Model)
+	if got := ids(m); len(got) != 3 || got[2] != 3 {
+		t.Fatalf("default filter ids = %v, want [1 2 3] (files-deleted hidden)", got)
+	}
+
+	m.seriesIdx = 2                                                        // C
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")}) // -> unwatched
+	m = next.(Model)
+	if m.filter != db.FilterUnwatched {
+		t.Fatalf("filter = %v, want unwatched", m.filter)
+	}
+	if got := ids(m); len(got) != 2 || got[0] != 2 || got[1] != 3 {
+		t.Fatalf("unwatched ids = %v, want [2 3]", got)
+	}
+	if s, _ := m.selectedSeries(); s.ID != 3 {
+		t.Errorf("selected = %d, want 3 (selection should follow the series)", s.ID)
+	}
+
+	m.filter = db.FilterCompleted - 1 // next press -> completed; C is filtered out
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	m = next.(Model)
+	if got := ids(m); len(got) != 1 || got[0] != 1 {
+		t.Fatalf("completed ids = %v, want [1]", got)
+	}
+	if m.seriesIdx != 0 {
+		t.Errorf("seriesIdx = %d, want 0 after clamp", m.seriesIdx)
+	}
+
+	m.filter = db.FilterDeleted - 1
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	m = next.(Model)
+	if got := ids(m); len(got) != 1 || got[0] != 4 {
+		t.Fatalf("deleted ids = %v, want [4]", got)
+	}
+
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("F")})
+	m = next.(Model)
+	if m.filter != db.FilterCompleted {
+		t.Errorf("after F from deleted, filter = %v, want completed", m.filter)
+	}
+
+	m.filter = db.FilterAll
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("F")})
+	m = next.(Model)
+	if m.filter != db.FilterDeleted {
+		t.Errorf("after F from all, filter = %v, want deleted (wrap)", m.filter)
 	}
 }

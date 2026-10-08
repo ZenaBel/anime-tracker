@@ -148,7 +148,7 @@ func (m Model) View() string {
 	body := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 
 	var footer strings.Builder
-	footer.WriteString(helpStyle.Render("?: help  ·  sort: " + m.sortMode.String() + "  ·  q: quit"))
+	footer.WriteString(helpStyle.Render("?: help  ·  sort: " + m.sortMode.String() + "  ·  filter: " + m.filter.String() + "  ·  q: quit"))
 	if m.err != nil {
 		footer.WriteString("\n")
 		footer.WriteString(errStyle.Render("error: " + m.err.Error()))
@@ -173,7 +173,11 @@ func (m Model) viewSeriesPane() string {
 	b.WriteString("\n\n")
 
 	if len(m.series) == 0 {
-		b.WriteString(dimTitle.Render("(no series found — press r to scan)"))
+		if len(m.allSeries) > 0 {
+			b.WriteString(dimTitle.Render("(no series match filter: " + m.filter.String() + " — press f to change)"))
+		} else {
+			b.WriteString(dimTitle.Render("(no series found — press r to scan)"))
+		}
 	}
 
 	maxVisible := m.visibleRows()
@@ -339,6 +343,7 @@ func (m Model) viewHelp() string {
 	section("Other", []helpRow{
 		{"r", "rescan the library"},
 		{"s", "cycle sort mode"},
+		{"f, F", "cycle series filter forward/back (all, unwatched, watching, not-started, completed, deleted)"},
 		{"/", "search series and episodes"},
 		{"c", "settings"},
 		{"g", "RSS feed browser"},

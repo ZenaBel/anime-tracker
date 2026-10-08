@@ -29,6 +29,7 @@ anime-tracker                            # launch the TUI (default when no comma
 anime-tracker scan                       # scan the library, print what changed
 anime-tracker list                       # list series with watch progress
 anime-tracker list --sort <mode>         # az (default), za, added, watched
+anime-tracker list --filter <name>       # all (default, hides files-deleted), unwatched, watching, not-started, completed, deleted
 anime-tracker list <series>              # list episodes of one series, fuzzy-matched
 anime-tracker play <query>               # fuzzy-find an episode, open it in the player
 anime-tracker playlist <series-query>    # play all remaining episodes of a series as one mpv playlist
@@ -64,7 +65,9 @@ episode list) · `space` toggles an episode between watched/new · `p` plays
 the rest of the selected series as one playlist · `R` renames the selected
 series/episode (on disk too) · `D` deletes it (on disk too, after a
 confirmation prompt) · `r` rescans the library · `s` cycles sort order
-(az → za → added → watched) · `/` opens search · `c` opens the settings
+(az → za → added → watched) · `f`/`F` cycle the series filter forward/back
+(all → unwatched → watching → not-started → completed → deleted; `all` hides
+series whose files were deleted, `deleted` shows only those) · `/` opens search · `c` opens the settings
 overlay (qBittorrent/SSH config — see below) · `g` opens the RSS overlay
 (browse/download articles qBittorrent's RSS reader has fetched — see below)
 · `S` runs `sync-downloads` (see below) and refreshes the panes if

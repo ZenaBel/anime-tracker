@@ -30,13 +30,17 @@ type Model struct {
 	store   *db.Store
 	rootDir string
 
-	series   []db.SeriesProgress
-	episodes []db.Episode
+	// allSeries is the unfiltered result of the last load; series is what
+	// the filter lets through and what the panes/search actually show.
+	allSeries []db.SeriesProgress
+	series    []db.SeriesProgress
+	episodes  []db.Episode
 
 	seriesIdx  int
 	episodeIdx int
 	focus      focusPane
 	sortMode   db.SortMode
+	filter     db.SeriesFilter
 
 	width, height int
 	statusMsg     string
@@ -302,6 +306,26 @@ func (m Model) jumpToSearchResult(r search.Result) (Model, tea.Cmd) {
 	m.focus = focusEpisodes
 	m.pendingEpisodeID = r.Episode.ID
 	return m, loadEpisodesCmd(m.store, r.Series.ID)
+}
+
+// withFilteredSeries stores all as the unfiltered series list, applies the
+// current filter to it, and reloads the selected series' episodes. The
+// selection is tracked by id so it survives the list shrinking or
+// reordering. Pass m.allSeries to just re-apply a changed filter.
+func (m Model) withFilteredSeries(all []db.SeriesProgress) (Model, tea.Cmd) {
+	var selectedID int64
+	if s, ok := m.selectedSeries(); ok {
+		selectedID = s.ID
+	}
+	m.allSeries = all
+	m.series = db.FilterSeries(all, m.filter)
+	m.seriesIdx = indexByID(m.series, selectedID, func(s db.SeriesProgress) int64 { return s.ID }, m.seriesIdx)
+
+	if s, ok := m.selectedSeries(); ok {
+		return m, loadEpisodesCmd(m.store, s.ID)
+	}
+	m.episodes = nil
+	return m, nil
 }
 
 func nextSortMode(current db.SortMode) db.SortMode {

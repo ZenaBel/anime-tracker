@@ -10,10 +10,11 @@ import (
 	"anime-tracker/internal/statusicon"
 )
 
-var sortFlag string
+var sortFlag, filterFlag string
 
 func init() {
 	listCmd.Flags().StringVar(&sortFlag, "sort", "az", "sort order: az, za, added (newest episode first), watched (recently watched first)")
+	listCmd.Flags().StringVar(&filterFlag, "filter", "all", "filter the series list: all (hides files-deleted series), unwatched, watching, not-started, completed, deleted; ignored when a series is given")
 }
 
 var listCmd = &cobra.Command{
@@ -32,6 +33,11 @@ var listCmd = &cobra.Command{
 			return err
 		}
 
+		filter, err := db.ParseSeriesFilter(filterFlag)
+		if err != nil {
+			return err
+		}
+
 		ctx := cmd.Context()
 		allSeries, err := store.ListSeriesWithProgress(ctx, sortMode)
 		if err != nil {
@@ -39,7 +45,7 @@ var listCmd = &cobra.Command{
 		}
 
 		if len(args) == 0 {
-			for _, s := range allSeries {
+			for _, s := range db.FilterSeries(allSeries, filter) {
 				fmt.Printf("%-40s %3d/%-3d\n", s.Title, s.Watched, s.Total)
 			}
 			return nil
