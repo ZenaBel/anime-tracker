@@ -143,6 +143,14 @@ func TestResolveSeriesNameForSync(t *testing.T) {
 		}
 	})
 
+	t.Run("saved flat, release folder name contains a dot (AniLibria.TV): still treated as a folder", func(t *testing.T) {
+		const folder = "Kami-tachi ni Hirowareta Otoko - AniLibria.TV [WEBRip 1080p HEVC]"
+		name, ok := resolveSeriesNameForSync("/downloads", "/downloads/"+folder, "/downloads", folder, allSeries)
+		if !ok || name != folder {
+			t.Fatalf("resolveSeriesNameForSync() = (%q, %v), want (%q, true)", name, ok, folder)
+		}
+	})
+
 	t.Run("saved flat, content is a bare file with no subfolder at all: fails clearly", func(t *testing.T) {
 		_, ok := resolveSeriesNameForSync("/downloads", "/downloads/Some Unrelated Show - 01.mkv", "/downloads", "[SubsPlease] Some Unrelated Show - 01 [1080p]", allSeries)
 		if ok {

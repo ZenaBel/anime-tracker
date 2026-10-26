@@ -375,11 +375,31 @@ func releaseFolderUnder(root, contentPath string) (string, bool) {
 		return "", false
 	}
 	// No further segment: contentPath is the entry directly under root — a
-	// folder (multi-file torrent) only if it has no extension, else a bare file.
-	if !hasChild && path.Ext(folder) != "" {
+	// folder (multi-file torrent) only if it has no file extension, else a
+	// bare file.
+	if !hasChild && hasFileExt(folder) {
 		return "", false
 	}
 	return folder, true
+}
+
+// hasFileExt reports whether name ends in something that looks like a real
+// file extension: a dot followed by 1-5 letters/digits and nothing else.
+// path.Ext alone isn't enough — a release folder such as
+// "Show - AniLibria.TV [WEBRip 1080p HEVC]" has a dot in the group name, so
+// path.Ext returns ".TV [WEBRip 1080p HEVC]" and the folder would be
+// mistaken for a bare file.
+func hasFileExt(name string) bool {
+	ext := strings.TrimPrefix(path.Ext(name), ".")
+	if ext == "" || len(ext) > 5 {
+		return false
+	}
+	for _, r := range ext {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9') {
+			return false
+		}
+	}
+	return true
 }
 
 // SyncPlan is what SyncDownloads would do with one completed torrent,
